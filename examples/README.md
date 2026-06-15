@@ -12,6 +12,7 @@ are executable docs — kept in sync with the live CLI by a CI gate in the sourc
 | [`cli-runtime`](cli-runtime.md) | `model eval` / `rule test` / `model compute` against document instances **(JVM only — not in the native binary)** |
 | [`cli-version`](cli-version.md) | `--version`, `manifest.version`, the model-version compatibility policy |
 
-> The commands call the bare `dmtool` (what the plugin/raw install puts on PATH). The **discovery** verbs
-> (`manifest`, `operators`, `patterns`, `schema`, `--help`) run with no model; the **model-based** ones
-> reference the project's own sample models, so read them to learn the shape of each call and its output.
+> **Try them:** clone this repo and run from its root with `dmtool` on PATH. The commands call the bare
+> `dmtool` (what the plugin/raw install provides); discovery verbs (`manifest`, `operators`, `patterns`,
+> `schema`, `--help`) need no model, and the model-based ones use the sample models shipped in
+> [`models/`](models/). (`cli-runtime`'s verbs are JVM-only — not in the native binary.)
