@@ -9,23 +9,33 @@ The companion to [`cli-tour.md`](cli-tour.md) (which reads & inspects): this dem
 
 ## where-used — what depends on a field
 
-Before you touch a field, see what references it. `where-used` is a cross-cutting root verb (it spans the whole model, so it takes the model as a **positional** and keeps its own `{entity, rules, computations, count}` shape rather than the envelope). It reports the rules **and** computations that read an entity — so you know the blast radius of a change.
+Before you touch a field, see what references it. `where-used` reports the rules **and** computations that read an entity — so you know the blast radius of a change. The entity is **positional** — like `rule read <path>` — with the model as the `-m` context (`--entity` stays as the explicit alias); the referrers ride the result envelope's `data`, like every read (its model-wide sibling is `model usage`).
 
 ```bash
-dmtool where-used examples/models/subscription-computed.dm.json \
-  --entity /Subscription/Billing/BaseFee
+dmtool -m examples/models/subscription-computed.dm.json \
+  where-used /Subscription/Billing/BaseFee
 ```
 
 ```output
 {
-  "entity" : "/Subscription/Billing/BaseFee",
-  "rules" : [ ],
-  "computations" : [ "/Subscription/Billing/EffectiveFeeComp" ],
-  "count" : 1
+  "target" : "where-used",
+  "op" : "read",
+  "outcome" : "read",
+  "ok" : true,
+  "valid" : true,
+  "summary" : "1 referrer(s) of /Subscription/Billing/BaseFee",
+  "data" : {
+    "entity" : "/Subscription/Billing/BaseFee",
+    "rules" : [ ],
+    "computations" : [ "/Subscription/Billing/EffectiveFeeComp" ],
+    "count" : 1
+  },
+  "diagnostics" : [ ],
+  "written" : false
 }
 ```
 
-→ `BaseFee` feeds **one** element — the computation `/Subscription/Billing/EffectiveFeeComp` (no validation rules). The split `rules` / `computations` arrays matter: a computation is stored as a rule in the kernel, but dmtool reports them apart so you see which is which.
+→ `BaseFee` feeds **one** element — the computation `/Subscription/Billing/EffectiveFeeComp` (no validation rules). The split `data.rules` / `data.computations` arrays matter: a computation is stored as a rule in the kernel, but dmtool reports them apart so you see which is which.
 
 ## computation explain — read the existing computation
 
@@ -153,10 +163,10 @@ dmtool -m examples/models/multifile/app/storefront.dm.json \
 
 ## batch — many ops in one warm JVM
 
-`batch` runs a JSON array of verb invocations in a single process, amortizing the kernel's warm-up. Each op is `{id, verb, args}` and dispatches to the flat verb name (`check`); each result is tagged by its `id`, so a producer can attribute every verdict.
+`batch` runs a JSON array of verb invocations in a single process, amortizing the kernel's warm-up. Each op is `{id, verb, args}`, where `verb` is the **target** (`rule`) and the operation (`check`) leads `args` — the same target-first form a standalone call uses; each result is tagged by its `id`, so a producer can attribute every verdict.
 
 ```bash
-printf "%s" "[{\"id\":\"ok\",\"verb\":\"check\",\"args\":[\"examples/models/subscription-computed.dm.json\",\"--field\",\"/Subscription/Billing/EffectiveFee\",\"--condition\",\"[EffectiveFee] < [BaseFee]\",\"--code\",\"X\"]},{\"id\":\"bad\",\"verb\":\"check\",\"args\":[\"examples/models/subscription-computed.dm.json\",\"--field\",\"/Subscription/Billing/EffectiveFee\",\"--condition\",\"[EffectiveFee] PatternViolated \\\"x\\\"\",\"--code\",\"Y\"]}]" > /tmp/edit-ops.json
+printf "%s" "[{\"id\":\"ok\",\"verb\":\"rule\",\"args\":[\"check\",\"-m\",\"examples/models/subscription-computed.dm.json\",\"--field\",\"/Subscription/Billing/EffectiveFee\",\"--condition\",\"[EffectiveFee] < [BaseFee]\",\"--code\",\"X\"]},{\"id\":\"bad\",\"verb\":\"rule\",\"args\":[\"check\",\"-m\",\"examples/models/subscription-computed.dm.json\",\"--field\",\"/Subscription/Billing/EffectiveFee\",\"--condition\",\"[EffectiveFee] PatternViolated \\\"x\\\"\",\"--code\",\"Y\"]}]" > /tmp/edit-ops.json
 dmtool batch /tmp/edit-ops.json | jq -c ".[] | {id, valid: .result.valid}"
 ```
 
@@ -165,7 +175,7 @@ dmtool batch /tmp/edit-ops.json | jq -c ".[] | {id, valid: .result.valid}"
 {"id":"bad","valid":false}
 ```
 
-→ Two `check`s in one JVM: the numeric comparison is `valid`, the pattern comparison on a number field is rejected — each verdict carries its `id`. This is how the eval runner re-validates many candidates at once.
+→ Two `rule check`s in one JVM: the numeric comparison is `valid`, the pattern comparison on a number field is rejected — each verdict carries its `id`. This is how the eval runner re-validates many candidates at once.
 
 ## The tool describes itself — operators & schema
 
