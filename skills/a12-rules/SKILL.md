@@ -20,9 +20,11 @@ The three you lean on:
 - **`dmtool operators`** — pick operators by meaning.
 - **`dmtool -m <model.json> rule check --field <ABSOLUTE field path> --condition "<DSL>" --code <ID>`** — submit a candidate and get the **real kernel's** verdict (the result envelope's `valid` + `diagnostics`). This is your ground truth. (`dmtool -m <model.json> model validate` re-checks a model's *existing* rules.)
 
+**Batch the edits you already know into one `apply`/`batch` call.** Binary startup is sub-100 ms (no warmup to amortize — so don't batch for *that*), but **every call is a round-trip *you* pay for**: reading the output and reasoning before the next one. So once you know several edits — fields, rules, an include mounted twice — land them in a single `apply`/`batch` (also **atomic**: all-or-nothing, rolled back on any failure) rather than one verb at a time. Keep single calls for **exploring and checking** (`describe`/`operators`/`rule check`), where you genuinely need each result before deciding the next.
+
 ## The loop
 
-1. **Orient** — `dmtool -m <model> model describe` (or `dmtool export <model>`) to learn the fields, their kinds, enum values, and which groups repeat.
+1. **Orient** — `dmtool -m <model> model describe` (or `dmtool -m <model> export`) to learn the fields, their kinds, enum values, and which groups repeat.
 2. **Pick operators** — from `dmtool operators`, by meaning.
 3. **Compose** the condition — minding **polarity**, **paths**, and **iteration** below.
 4. **Check** — `dmtool -m <model> rule check …`. If `valid:true`, done. If not, read each diagnostic.
