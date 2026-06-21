@@ -20,6 +20,7 @@ model validate
 model describe
 model read
 model usage
+model rename
 model eval
 model compute
 rule check
@@ -45,6 +46,7 @@ field remove
 field rename
 field move
 group add
+group modify
 group multiselect
 group attachment
 group read
@@ -59,6 +61,7 @@ typedef rename
 typedef extract
 typedef inline
 typedef import
+typedef unimport
 include add
 include read
 include remove
@@ -476,6 +479,7 @@ dmtool schema rule add | jq '{op, returns, inputKeys: (.input.properties|keys)}'
   "op": "rule add",
   "returns": "result",
   "inputKeys": [
+    "allowDifferingDecimals",
     "alternatives",
     "code",
     "comment",
@@ -581,11 +585,12 @@ dmtool -m examples/models/order-ruled.dm.json field read /Order/OrderDate | jq '
 ```output
 {
   "field": "/Order/OrderDate",
-  "type": "DateType"
+  "type": "DateType",
+  "required": false
 }
 ```
 
-→ `/Order/OrderDate` is a `DateType` — the kernel's type name (vs the coarser `kind: DATE` from `model describe`). The type is what lets `DifferenceInDays` take this field as an operand.
+→ `/Order/OrderDate` is a `DateType` — the kernel's type name (vs the coarser `kind: DATE` from `model describe`). The type is what lets `DifferenceInDays` take this field as an operand. `required` echoes the field's requiredness in the same vocabulary you set it with (`true`/`false`/`"ifParentPresent"`).
 
 ```bash
 dmtool -m examples/models/order-ruled.dm.json group read /Order/BillingAddress | jq '.data'

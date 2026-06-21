@@ -70,6 +70,20 @@ dmtool -m /tmp/struct.dm.json field add --group /Order --name Discount --kind NU
 
 → `outcome: applied` with `changed.added = /Order/Discount` is the whole story: the field exists now, and `written: true` / `output` says it was persisted to the file. The kernel re-binds the edited model on the way out, so a structurally invalid edit would surface as diagnostics rather than a silent write.
 
+A rich `<spec.json>` carries the full per-kind config + metadata — including **per-locale custom error messages**: `requiredMessages` for a required field's empty-error text (omit to use the kernel default). Here a required `CustomerRef` field with its own message:
+
+```bash
+echo '{"group":"/Order","name":"CustomerRef","kind":"STRING","required":true,
+       "requiredMessages":{"en_US":"A customer reference is required"}}' > /tmp/ref-spec.json
+dmtool -m /tmp/struct.dm.json field add /tmp/ref-spec.json | jq -c '{outcome, added: .changed.added}'
+```
+
+```output
+{"outcome":"applied","added":"/Order/CustomerRef"}
+```
+
+→ The custom text lives on the field's requiredness config; `enum.errorMessages` does the same for an enum's invalid-value error. (Both are field-level — distinct from a *rule's* messages.)
+
 ## group add — a repeatable group
 
 `group add` attaches a child group to `--parent`. Pass `--repeatable <max>` to make it a repetition list (a line-item-style group that repeats up to `max` times); the envelope echoes `changed.repeatable: true`.
@@ -200,7 +214,8 @@ dmtool -m /tmp/struct2.dm.json field read /Subscription/Billing/BaseFee
   "summary" : "read /Subscription/Billing/BaseFee",
   "data" : {
     "field" : "/Subscription/Billing/BaseFee",
-    "type" : "NumberType"
+    "type" : "NumberType",
+    "required" : false
   },
   "diagnostics" : [ ],
   "written" : false
@@ -233,6 +248,35 @@ dmtool -m /tmp/struct2.dm.json group read /Subscription/Addons
 ```
 
 → `data.repeatable: true` says `/Subscription/Addons` is a repetition list. A plain sub-group would read `false`.
+
+## group modify — the index field (repetition row-key)
+
+A repetition list can name one direct-child field as its **index field** — the row-key that arms the `RepetitionNotUnique` uniqueness check and parallel iteration. `group modify --index-field` sets it (it requires a repeatable group + an existing child field); `group read` then echoes `data.indexField`:
+
+```bash
+dmtool -m /tmp/struct2.dm.json group modify /Subscription/Addons --index-field Name
+dmtool -m /tmp/struct2.dm.json group read /Subscription/Addons | jq -c '.data'
+```
+
+```output
+{
+  "target" : "group",
+  "op" : "modify",
+  "outcome" : "applied",
+  "ok" : true,
+  "summary" : "set /Subscription/Addons: index field Name",
+  "changed" : {
+    "group" : "/Subscription/Addons",
+    "indexField" : "Name"
+  },
+  "diagnostics" : [ ],
+  "written" : true,
+  "output" : "/tmp/struct2.dm.json"
+}
+{"group":"/Subscription/Addons","repeatable":true,"indexField":"Name"}
+```
+
+→ `changed.indexField: Name` and the read's `data.indexField` confirm the row-key landed. `--clear-index-field` removes it; an index field on a single (non-repeating) group is refused.
 
 ## group remove — drop a whole sub-tree
 
@@ -298,6 +342,20 @@ dmtool -m /tmp/struct2-td.json typedef add --id Currency --kind NUMBER
 
 → `changed.added = Currency` over `kind: NUMBER`: the model now carries a reusable type named `Currency`.
 
+For a richer type — a reusable **enum** or a **restricted** string/number — pass a `<spec.json>` instead of `--kind` (the same per-kind config a `field add` spec takes; see `schema typedef add`). Here a reusable `BillingCycle` enum:
+
+```bash
+echo '{ "kind": "ENUM", "enum": { "values": [ {"value":"MONTHLY"}, {"value":"ANNUAL"} ] } }' > /tmp/cycle.json
+dmtool -m /tmp/struct2-td.json typedef add --id BillingCycle /tmp/cycle.json \
+  | jq -c '{outcome, added: .changed.added, kind: .changed.kind}'
+```
+
+```output
+{"outcome":"applied","added":"BillingCycle","kind":"ENUM"}
+```
+
+→ The enum type-def is reusable across fields — every `BillingCycle` field shares the one value set. (`typedef add` carries only a type; set a type-def's descriptions/annotations with `meta <id>`.)
+
 `typedef read` lists the declared ids under `data.typedefs` (a non-mutating query):
 
 ```bash
@@ -311,9 +369,9 @@ dmtool -m /tmp/struct2-td.json typedef read
   "outcome" : "read",
   "ok" : true,
   "valid" : true,
-  "summary" : "read 1 type definition(s)",
+  "summary" : "read 2 local type definition(s)",
   "data" : {
-    "typedefs" : [ "Currency" ]
+    "typedefs" : [ "Currency", "BillingCycle" ]
   },
   "diagnostics" : [ ],
   "written" : false
@@ -867,6 +925,34 @@ dmtool -m /tmp/struct2-cfg.json config read | jq -c ".data"
 
 → The comma stuck; the other settings are untouched. (`config modify` also takes `--time-zone` and `--condition-language`; at least one of the three is required.) Note `locales: ["en_US", "de_DE"]` — this model is **bilingual**, so a new rule or computation must carry both an `en_US` and a `de_DE` message.
 
+A model's **access-control roles** live in a `roles` header annotation (the `workspace roles` lint binds them to `auth/roles.yaml`). `config modify --role` **merges** a role in — adding one keeps the rest — and `config read` echoes the header `annotations`:
+
+```bash
+dmtool -m /tmp/struct2-cfg.json config modify --role shopper --role merchant >/dev/null
+dmtool -m /tmp/struct2-cfg.json config modify --role reviewer >/dev/null
+dmtool -m /tmp/struct2-cfg.json config read | jq -c ".data.annotations"
+```
+
+```output
+{"roles":"shopper,merchant,reviewer"}
+```
+
+→ All three roles survive — the second `--role reviewer` merged rather than clobbering `shopper,merchant`. `--clear-roles` drops the annotation entirely.
+
+## model rename — change the model's id
+
+`model rename --to <newId>` changes the model's header `id` — a §6 **safety-gated** refactor. With a workspace (`-w`) it refuses if a sibling **includes** the old id (the cross-model cascade is out of scope); here it's a standalone single-model edit:
+
+```bash
+dmtool -m /tmp/struct2-cfg.json model rename --to subscription-v2 | jq -c "{outcome, changed}"
+```
+
+```output
+{"outcome":"applied","changed":{"id":"subscription-v2","from":"subscription"}}
+```
+
+→ `changed.from`/`changed.id` show the id moved `subscription → subscription-v2`. Run with `-w <workspace>` to arm the cross-model gate that refuses (writing nothing) when another model would be left including a now-missing id.
+
 ## export — the artifacts, not the envelope
 
 `export` takes the model via the universal `-m` like every other verb (`dmtool -m <model> export [<artifact>]`), but it prints a plain artifact — *not* the JSON result envelope. With no artifact name it emits the **model card** (a Markdown summary); `fields | groups | rules` print line-delimited JSON instead, and `--out-dir` writes all four to files.
@@ -971,11 +1057,12 @@ dmtool -m /tmp/extras.dm.json \
 
 ## Element metadata — describe & annotate anything
 
-`meta <ref>` reads or edits an element's **internal/external descriptions** and **annotations** — uniformly across a field, group, rule (by name-path), or type-def (by id). With write flags it sets/removes them:
+`meta <ref>` reads or edits an element's **label**, **internal/external descriptions**, and **annotations** — uniformly across a field, group, rule (by name-path), or type-def (by id). With write flags it sets/removes them. The display `--label` applies to a field/group (the only describables that carry one):
 
 ```bash
 dmtool -m /tmp/extras.dm.json \
   meta /Order/CustomerName \
+  --label en_US="Customer Name" \
   --internal en_US="the customer's full legal name" \
   --annotate owner=orders-team
 ```
@@ -988,6 +1075,7 @@ dmtool -m /tmp/extras.dm.json \
   "ok" : true,
   "summary" : "changed metadata of /Order/CustomerName",
   "changed" : {
+    "label.en_US" : "Customer Name",
     "internal.en_US" : "the customer's full legal name",
     "annotation.owner" : "orders-team"
   },
@@ -1012,6 +1100,9 @@ dmtool -m /tmp/extras.dm.json meta /Order/CustomerName
   "valid" : true,
   "summary" : "read metadata of /Order/CustomerName",
   "data" : {
+    "label" : {
+      "en_US" : "Customer Name"
+    },
     "internalDescription" : {
       "en_US" : "the customer's full legal name"
     },
@@ -1025,7 +1116,15 @@ dmtool -m /tmp/extras.dm.json meta /Order/CustomerName
 }
 ```
 
-The same verb reaches a **rule** (not just fields/groups) — the metadata is element-wide:
+A **group** is labelled the same way — the label merges per locale, so a one-locale edit keeps the rest:
+
+```bash
+dmtool -m /tmp/extras.dm.json \
+  meta /Order/ShippingAddress \
+  --label en_US="Shipping Address"
+```
+
+The same verb reaches a **rule** (not just fields/groups) — descriptions + annotations are element-wide (a rule has no display label, so `--label` on one is refused):
 
 ```bash
 dmtool -m /tmp/extras.dm.json \
