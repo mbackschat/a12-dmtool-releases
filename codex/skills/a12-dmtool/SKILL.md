@@ -1,11 +1,11 @@
 ---
-name: a12-rules
-description: Author and validate A12 Kernel validation rules with the dmtool CLI. Use when a user (often a document modeller or business analyst) wants to add, check, or understand a validation rule on an A12 document model. Covers the rule envelope, the error-scenario polarity, field-path references, per-row iteration, and the explore→compose→check loop.
+name: a12-dmtool
+description: Author and validate A12 Kernel document models with the dmtool CLI — both a model's structure (fields, groups, type definitions, includes, config) and its validation rules. Use when a user (often a document modeller or business analyst) wants to create, edit, check, or understand an A12 document model — add or change fields and groups, factor out reusable includes, refactor structure, or author validation rules on it. Covers model creation, the structure edits and refactors (extract/move/rename), the rule envelope and error-scenario polarity, field-path references, per-row iteration, and the explore→compose→check loop.
 ---
 
-# Authoring A12 validation rules with dmtool
+# Authoring A12 document models with dmtool
 
-You help author **A12 validation rules** on a document model with the `dmtool` CLI. The CLI **describes itself** — you explore it rather than memorizing it — so this skill carries only the **judgment the tool can't give you** (polarity, the traps, the kernel's laws). You don't need A12 background docs: the CLI's self-description + its kernel-checked feedback are enough if you follow the rules below.
+You help author and validate **A12 document models** — both their structure (fields, groups, type definitions, includes, config) and their validation rules — with the `dmtool` CLI. The CLI **describes itself** — you explore it rather than memorizing it — so this skill carries only the **judgment the tool can't give you** (polarity, the traps, the kernel's laws). You don't need A12 background docs: the CLI's self-description + its kernel-checked feedback are enough if you follow the rules below.
 
 ## ⛔ First — is this even a rule? Prefer a field/group property
 
@@ -33,15 +33,19 @@ The three you lean on:
 - **`dmtool operators`** — pick operators by meaning.
 - **`dmtool -m <model.json> rule check --field <ABSOLUTE field path> --condition "<DSL>" --code <ID>`** — submit a candidate and get the **real kernel's** verdict (the result envelope's `valid` + `diagnostics`). This is your ground truth. (`dmtool -m <model.json> model validate` re-checks a model's *existing* rules.)
 
+**⛔ Inspect and edit a model ONLY through `dmtool`'s structured verbs — never read or hand-edit the raw `.dm.json`, and don't fall back to `export` to inspect, either.** To *see* a model: `model describe` (structure + kinds + enum values) and `field read` / `rule read` (one element in full — `field read` echoes the field's metadata **and its per-kind config**: number min/max/unit/scale, string pattern/length/`patternMessage`, enum values, date/time formats — so you can confirm a constraint actually persisted). To *change* it: the edit verbs. **`export` is NOT an inspection tool** — it dumps the model's raw DM-JSON for *emitting* it (saving, handing to A12 Tools); eyeballing an export dump to understand a model is the same anti-pattern as `cat`-ing the file, because you're reading the kernel's internal format that `describe`/`read` exist to abstract. The structured reads already show everything you'd look for — if one seems to omit something you need, that's a bug report, not a `cat` or an `export`.
+
 **Batch the edits you already know into one `apply`/`batch` call.** Binary startup is sub-100 ms (no warmup to amortize — so don't batch for *that*), but **every call is a round-trip *you* pay for**: reading the output and reasoning before the next one. So once you know several edits — fields, rules, an include mounted twice — land them in a single `apply`/`batch` (also **atomic**: all-or-nothing, rolled back on any failure) rather than one verb at a time. Keep single calls for **exploring and checking** (`describe`/`operators`/`rule check`), where you genuinely need each result before deciding the next.
 
-**Naming model files.** When you name a new model file (e.g. `model new -o <file>`), match the workspace's existing convention: A12 Tools names a document model `<Name>_DM.json` and a type-definition model `<Name>_TDM.json`; some repos use `.dm.json`. Match the files already there; with nothing to match, default to **`_DM.json`**. (References resolve by the model's `id`, not its filename — so this is recognizability, not correctness.)
+**Going bilingual is the classic case to batch.** Adding a second locale (`config modify --add-locale de_DE`) makes the kernel require, in the new locale: every **enum value's** labels (else `MVK_INTERNAL_VALUES_AND_DISPLAY_VALUES` — *"display value and XML value not specified together"*), every label you set on a **new** field, a message on **every existing rule/computation** — not just the ones you're editing (a rule left with only its old-locale message → `MVK_ERROR_MESSAGE_FOR_LANGUAGE_MISSING`), **and** every **patterned string field's pattern message** (a `pattern` field's `patternMessage` left in only the old locale hits the *same* `MVK_ERROR_MESSAGE_FOR_LANGUAGE_MISSING` — the per-locale form is the `patternMessages` map). The `--add-locale` itself is *rejected* until all of these are present (so it's all-or-nothing). **Scope it precisely: run `config modify --add-locale <loc> --dry-run` first** — it lists the *exact* per-element gaps this model actually has (which rules/enums/patterned fields are missing the new locale), so you top up only those instead of guessing from the list above (the enum-label and pattern-message items apply only if the model has them). Pre-existing single-locale *field* labels are the one exception (tolerated — labels, unlike the error texts above, aren't required per-locale), so the requirement is asymmetric and surprising. Do the `--add-locale` **and** the per-enum-value label top-ups, any new fields' bilingual labels, **the new-locale message on every existing rule** (`rule read` with no arg lists them), **and a `field modify` re-supplying `patternMessages` for the new locale on every patterned string field** in **one** `apply` (you can't set a new-locale message before `--add-locale` declares it, so they must ride the same atomic apply), so the single terminal gate sees a consistent model instead of rejecting a half-bilingual one.
+
+**Naming model files — match the basename to the model `id`.** A12 Tools requires a model's **file basename to equal its model name (the header `id`)**, and it does **not** strip the suffix — so the suffix is part of the *id*, not just a file decoration. When you create a model, give `--id` and `-o` the **same** stem: `model new --id Order_DM -o Order_DM.json`. The A12 Tools convention is `<Name>_DM` for a document model, `<Name>_TDM` for a type-definition model (some repos use a lowercase `.dm.json` with a bare id — match whatever the workspace already uses). The trap the importer flags: `--id order` written to `Order_DM.json` (id ≠ basename). dmtool itself resolves references by `id`, never by filename — but the A12 modeler gates basename == id, so keep them equal. When you `group extract`, the new sub-model is written as `<reference>.dm.json` in the include-dir — take its exact path from the result's `subModel` field; a guessed `<reference>.json` won't load.
 
 **If `dmtool` is `command not found`:** the plugin bundles an installer next to this skill — run it to download the binary on demand: `bash "${CLAUDE_SKILL_DIR}/ensure-dmtool.sh"` (that variable is this skill's own directory on Claude Code; on Codex run the `ensure-dmtool.sh` that sits beside this `SKILL.md`). It fetches the per-OS native build, checksum-verifies it, and prints a line like `dmtool ready: <absolute path>`. **Use that printed path to invoke `dmtool`** for the rest of the session — a script you run mid-session can't reliably add it to `PATH`. **Don't build it from source or fetch it any other way.** (Where `dmtool` already runs, none of this applies — just use it.)
 
 ## The loop
 
-1. **Orient** — `dmtool -m <model> model describe` (or `dmtool -m <model> export`) to learn the fields, their kinds, enum values, and which groups repeat.
+1. **Orient** — `dmtool -m <model> model describe` to learn the fields, their kinds, enum values, and which groups repeat (the structured view; not `export`, which only dumps the raw model).
 2. **Pick operators** — from `dmtool operators`, by meaning.
 3. **Compose** the condition — minding **polarity**, **paths**, and **iteration** below.
 4. **Check** — `dmtool -m <model> rule check …`. If `valid:true`, done. If not, read each diagnostic.
@@ -73,6 +77,7 @@ A condition is evaluated relative to the rule's **group** (its iteration scope �
 - You can compare **field-to-field**, not just field-to-literal — bracket both: `[EffectiveFee] < [BaseFee]`.
 - **Strict vs inclusive**: map the wording carefully. "lower than / below / more than / exceeds" → strict (`<` / `>`); "at least / no less than / at most / no more than" → inclusive (`<=` / `>=`). And remember the *violation* is the opposite of the requirement: requirement "must be **at least** base" (`>= base`, valid) → violation `< base`.
 - **Enums compare by stored value**, not the display label: `== "ACTIVE"`, not `== "Active"`. (`model describe` lists the stored values.)
+- **Booleans/confirms compare to the capitalized `True`/`False`** — `[Active] == True`, **not** the JSON `true`/`false` (a lowercase `true` is a parse error, `MVK_UNEXPECTED_TOKEN`). A **confirm** field compares only to `True` (`== True` / `!= True`); `[Sig] == False` is rejected (`MVK_INVALID_COMPARE_TO_YES`) — a confirm is checked-or-not, so test the unchecked side with `!= True` (or `FieldNotFilled`).
 
 ## Empty values in a comparison
 
@@ -84,7 +89,7 @@ How an **empty** (unspecified) field behaves in a comparison depends on its type
 | **confirm** | treated as **`False`** |
 | string · date · boolean · enum | the comparison is **not evaluated** (it doesn't fire, no error) |
 
-So **guard a number comparison** when an empty value shouldn't trip it — `FieldFilled(Amount) And [Amount] < 100`. (`rule check` flags the unguarded case for you as `RK_UNGUARDED_NUMBER_COMPARISON`.) Two corners: the `0` substitution does **not** apply to `Min`/`Max` (empties are ignored there), and there are no empty strings, so `[F] == ""` is never true — use `FieldNotFilled(F)` to test for absence.
+So **guard a number comparison** when an empty value shouldn't trip it — `FieldFilled(Amount) And [Amount] < 100`. (`rule check` flags the unguarded case as `RK_UNGUARDED_NUMBER_COMPARISON` — but **direction-aware**: only where the empty `0` would actually fire it, so `[Amount] < 100` is flagged while `[Amount] > 1000` is not (`0 > 1000` is false); the silence on the latter is correct, not a miss.) Two corners: the `0` substitution does **not** apply to `Min`/`Max` (empties are ignored there), and there are no empty strings, so `[F] == ""` is never true — use `FieldNotFilled(F)` to test for absence.
 
 ## Per-row iteration & the negative guard
 
@@ -95,18 +100,22 @@ So **guard a number comparison** when an empty value shouldn't trip it — `Fiel
 
 ## Aggregates over a repeatable group
 
-When a rule reasons about **all the rows at once** (not one row), use an **aggregate** over the flattened group — `Group*/Field` (the `*` takes every row's value):
+When a rule reasons about **all the rows at once** (not one row), it folds the repetitions with an **aggregate**, and the **`*` wildcard is what flattens them**. Such a rule is **model-level** (it spans rows), so its error field is a **non-repeatable** field — it does **not** iterate per row.
 
-- **`Sum(Lines*/Amount)` sums the field's *values*.** This is **not** the same as *counting* rows — `Sum` adds the numbers; to count how many fields are filled use `NumberOfFilledFields(...)`. Mixing these up is a common slip: "total of the amounts" is `Sum`, "how many items" is a count.
-- `Min` / `Max` / count-style aggregates exist too — look up the exact names/operands with `dmtool operators`.
-- An aggregate **is a number**, so compare it like one: `Sum(Lines*/Amount) > 500`. To compare against another field instead of a literal, bracket the field: `[Cap] < Sum(Lines*/Amount)`.
+- **The `*` goes on whatever flattens the repetitions** — the **field** for a value aggregate (`Sum(Lines*/Amount)`, `NumberOfFilledFields(Lines*/Sku)`, `Min` / `Max`), or the **group itself** to count rows (`NumberOfFilledGroups(Lines*)`). A *single* repeatable group reference needs that `*`: `NumberOfFilledGroups(Lines)` without it is rejected `MVK_NO_WILDCARD`, and a `*` where the group must stay whole (`GroupFilled(Lines*)`) is rejected `MVK_NO_WILDCARDS_ALLOWED`. (Plain `GroupFilled(Group)` takes no `*` — it's the **per-row** existence guard from the section above, valid only from *inside* the iterating group, never as a model-level reference.)
+- **Pick the operator by the question:** total of the amounts → `Sum(Lines*/Amount)`; **how many rows** → `NumberOfFilledGroups(Lines*)`; how many filled instances of a field → `NumberOfFilledFields(Lines*/Sku)`. Confirm names/operands with `dmtool operators`.
+- **"No two rows share a key" → `FieldValuesNotUnique(/Group*/Key)`** (absolute starred path; error field the **key itself inside the repeated group**, e.g. `--field /Order/Items/Sku`). It validates *and persists* under the default grouping and still iterates per row (points at the offending row). The sibling `RepetitionNotUnique(Group/Key)` instead needs the rule at the repeated group's **PARENT** — pass `--group <parent>` to `rule check` **and** `rule add` (the default grouping rejects it). Reach for `FieldValuesNotUnique` first.
+- **Resolve from the rule's scope, or go absolute.** A wildcard path resolves relative to the error field's group; from a different branch a relative `Lines*/Amount` is `MVK_INVALID_ENTITY` — write the absolute `/Invoice/Lines*/Amount`. When unsure, go absolute.
+- **An aggregate is a number**, so compare it: `Sum(Lines*/Amount) > 500`, or against a field by bracketing it: `[FeeCap] < Sum(Lines*/Amount)`.
 - **`Having` filters which rows are folded:** `Sum(Lines*/Amount Having [Lines/Type] == "FEE")` sums only the fee lines.
-- An aggregate rule is **model-level** (it spans rows), so put its error field on a **non-repeatable** field — it does **not** iterate per row.
+- **The error field must appear in the condition** (any rule — kernel `MVK_ERROR_FIELD_NOT_REFERENCED`). A model-level aggregate's error field is *not* referenced by the aggregate's own path, so reference it explicitly: put the error field on the **cap/limit you compare the aggregate against** (`[FeeCap] < Sum(...)` references `FeeCap`), or guard with `FieldFilled(<errorField>)`. "Put it on a non-repeatable field" is necessary but **not sufficient** — the field still has to be named in the condition.
 
-Example — *"the total of all FEE lines must not exceed 500"* (an invoice with repeatable `/Invoice/Lines`):
+Example — *"the FEE-line total must not exceed the invoice's FeeCap"* (repeatable `/Invoice/Lines` with `Amount`/`Type`; non-repeatable `/Invoice/FeeCap`):
 ```
-dmtool -m invoice.json rule check --field /Invoice/Total \
-  --condition "Sum(Lines*/Amount Having [Lines/Type] == \"FEE\") > 500" --code FEE_TOTAL_TOO_HIGH
+dmtool -m invoice.json rule check --field /Invoice/FeeCap \
+  --condition "FieldFilled(FeeCap) And [FeeCap] < Sum(Lines*/Amount Having [Lines/Type] == \"FEE\")" \
+  --code FEE_OVER_CAP
+# → "valid": true — FeeCap is referenced (via the comparison), so the error field appears in the condition
 ```
 
 ## Dates
@@ -160,7 +169,7 @@ Apply the same shape to your own model: find the enum + the repeatable group wit
 `check` returns diagnostics with a `code` and `summary`. The frequent ones:
 - `MVK_NEG_CONDITION_IN_ITERATION` → your iterating rule has an unguarded negative; add `GroupFilled(<group>) And …`.
 - `MVK_INVALID_ENTITY` → a path doesn't resolve; bare names are relative to the iteration scope, cross-group fields need an absolute `[/…]` path.
-- `MVK_UNEXPECTED_TOKEN` → a bracketing slip: either a comparison operand *missing* its brackets (`[Field] > 1000`), or — just as common — *extra* brackets on a ref inside a call (`DateRange([OrderDate], …)` → `DateRange(OrderDate, …)`; function/predicate/aggregate args are bare). Or a malformed expression.
+- `MVK_UNEXPECTED_TOKEN` → a syntax slip the kernel reports without a message of its own — most often: a **lowercase boolean** (`true`/`false` → capitalize to `True`/`False`); a **bracketing** mistake (operand *missing* its brackets `[Field] > 1000`, or *extra* brackets on a ref inside a call `DateRange([OrderDate], …)` → `DateRange(OrderDate, …)` — call args are bare); an **unquoted string** (`== OPEN` → `== "OPEN"`); or an ISO date literal (use the German `"dd.MM.yyyy"`). The enriched diagnostic's `fix` lists these.
 - `MVK_INVALID_TYPE_FOR_COMPARISON` → ordering (`<`/`>`) needs numbers or dates; compare strings/enums with `==` / `!=`.
 
 For anything else, look the operator up with `dmtool operators <id>` — its `gotchas` and `fix` fields usually say exactly what to do.
