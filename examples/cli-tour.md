@@ -55,6 +55,7 @@ group rename
 group move
 group extract
 typedef add
+typedef modify
 typedef read
 typedef remove
 typedef rename
@@ -143,6 +144,9 @@ dmtool -m examples/models/order-ruled.dm.json rule read /Order/DeliveryNotBefore
   "summary" : "read /Order/DeliveryNotBeforeOrder",
   "data" : {
     "rule" : "/Order/DeliveryNotBeforeOrder",
+    "severity" : "ERROR",
+    "errorCode" : "DELIVERY_BEFORE_ORDER",
+    "errorField" : "/Order/DeliveryDate",
     "converted" : true,
     "condition" : "AllFieldsFilled(/Order/OrderDate, /Order/DeliveryDate) And DifferenceInDays(/Order/OrderDate, /Order/DeliveryDate) < 0",
     "messages" : [ {
@@ -301,14 +305,14 @@ dmtool -m examples/models/order-ruled.dm.json rule check --field /Order/Quantity
       "rule" : "",
       "operator" : "LessThan"
     },
-    "fix" : "FieldFilled(/Order/Quantity) And <the comparison>",
-    "explain" : "an unspecified number defaults to 0 in a comparison (KERNEL-SEMANTICS §2) — unlike an empty string/date/enum, which is not evaluated — so guard the number with FieldFilled if an empty value should not trip the rule"
+    "fix" : "decide by intent: if an empty/missing '/Order/Quantity' should NOT trip the rule, guard it — FieldFilled(/Order/Quantity) And <the comparison>; if a missing number IS a violation (empty-as-0 should fire), the unguarded form is intentional — keep it",
+    "explain" : "an unspecified number defaults to 0 in a comparison (KERNEL-SEMANTICS §2) — unlike an empty string/date/enum, which is not evaluated — so this is only a trap when empty should be NEUTRAL; an empty-as-violation rule is legitimately unguarded"
   } ],
   "written" : false
 }
 ```
 
-→ The kernel says `valid: true`, but the lint backstop attached a `WARNING` — `RK_UNGUARDED_NUMBER_COMPARISON`. Because an empty number reads as **0** (KERNEL-SEMANTICS §2), the rule would also fire on an empty `Quantity`; the `fix` field spells out the guard. The trap is caught at authoring time, before the rule is ever persisted.
+→ The kernel says `valid: true`, but the lint backstop attached a `WARNING` — `RK_UNGUARDED_NUMBER_COMPARISON`. Because an empty number reads as **0** (KERNEL-SEMANTICS §2), the rule would also fire on an empty `Quantity`; the `fix` field is **two-sided** — guard it if an empty value should be neutral, or keep it unguarded if a missing number is itself a violation. The trap is caught at authoring time, before the rule is ever persisted.
 
 `--suggest-error-field` adds the legal error-field picks to `data` — the condition's referenced fields inside its iteration scope. The error field must be one of these (the `MVK_ERROR_FIELD_NOT_REFERENCED` law), so you choose it up front instead of after a reject.
 
@@ -408,7 +412,7 @@ dmtool diagnostics | jq -c '{count, severities: (.diagnostics|map(.severity)|uni
 ```
 
 ```output
-{"count":38,"severities":["ERROR","INFO","WARNING"],"sources":["ENVIRONMENT","KERNEL","LINT","PRECHECK"]}
+{"count":40,"severities":["ERROR","INFO","WARNING"],"sources":["ENVIRONMENT","INTERNAL","KERNEL","LINT","PRECHECK"]}
 ```
 
 Pass a code for its full entry — meaning + the canonical fix:
@@ -451,8 +455,8 @@ dmtool schema result | jq "{required, properties: (.properties | map_values(.des
   "properties": {
     "target": "the element family acted on: model | rule | computation | field | group | typedef | include | config | workspace",
     "op": "the operation: add | read | modify | remove | validate | check | explain | describe | export | eval | compute | …",
-    "outcome": "the execution result class",
-    "ok": "the operation executed as asked (outcome in applied | preview | read | staged)",
+    "outcome": "the execution result class; `error` = the tool itself failed (an unexpected throwable caught at the boundary, exit 70), distinct from `rejected` (input rejected, exit 1)",
+    "ok": "the operation executed as asked (outcome in applied | preview | read | staged); false for refused | rejected | error",
     "valid": "validate/check (and after a mutating op): the subject model is kernel-valid — distinct from `ok`",
     "summary": "one human-readable line (the agent's quick read / log line)",
     "changed": "(mutations) the delta on success — e.g. {added, kind}, a refactor's rewritten references",
@@ -487,6 +491,7 @@ dmtool schema rule add | jq '{op, returns, inputKeys: (.input.properties|keys)}'
     "computedField",
     "condition",
     "field",
+    "group",
     "messages",
     "name",
     "severity"
@@ -576,7 +581,7 @@ dmtool -m examples/models/order-ruled.dm.json model usage \
 
 ## field / group / config read — the structural facts
 
-Beyond rules, the same `<target> read` pattern reads the model's **structure**. Each returns just the fact under `data` (projected here with `jq` for brevity): `field read` a field's declared type, `group read` whether a group repeats, `config read` the document's rendering config. These are the facts that decide how a condition must be written.
+Beyond rules, the same `<target> read` pattern reads the model's **structure**. Each returns just the fact under `data` (projected here with `jq` for brevity): `field read` a field's declared kind, `group read` whether a group repeats + its child fields, `config read` the document's rendering config. These are the facts that decide how a condition must be written.
 
 ```bash
 dmtool -m examples/models/order-ruled.dm.json field read /Order/OrderDate | jq '.data'
@@ -585,12 +590,15 @@ dmtool -m examples/models/order-ruled.dm.json field read /Order/OrderDate | jq '
 ```output
 {
   "field": "/Order/OrderDate",
-  "type": "DateType",
-  "required": false
+  "kind": "DATE",
+  "required": false,
+  "date": {
+    "format": "yyyy-MM-dd"
+  }
 }
 ```
 
-→ `/Order/OrderDate` is a `DateType` — the kernel's type name (vs the coarser `kind: DATE` from `model describe`). The type is what lets `DifferenceInDays` take this field as an operand. `required` echoes the field's requiredness in the same vocabulary you set it with (`true`/`false`/`"ifParentPresent"`).
+→ `/Order/OrderDate` reports `kind: DATE` — the same value-kind vocabulary `model describe` and `field add` use (the kernel's internal `DateType` discriminator never leaks). The kind is what lets `DifferenceInDays` take this field as an operand. `required` echoes the field's requiredness in the same vocabulary you set it with (`true`/`false`/`"ifParentPresent"`), and the per-kind `date` config (its `format`) rides the same read — so a constraint is verifiable here, never from the raw model JSON.
 
 ```bash
 dmtool -m examples/models/order-ruled.dm.json group read /Order/BillingAddress | jq '.data'
@@ -599,7 +607,10 @@ dmtool -m examples/models/order-ruled.dm.json group read /Order/BillingAddress |
 ```output
 {
   "group": "/Order/BillingAddress",
-  "repeatable": false
+  "repeatable": false,
+  "fields": [
+    "/Order/BillingAddress/PostalCode"
+  ]
 }
 ```
 
