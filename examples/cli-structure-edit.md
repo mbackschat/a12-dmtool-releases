@@ -28,16 +28,16 @@ dmtool model new --id catalog --locale en_US --root Catalog \
 {"id":"catalog","root":"Catalog"}
 ```
 
-What it emits is **kernel-checked**, so the fresh model binds immediately — write it with `-o`, then edit it like any other:
+What it emits is **kernel-checked**, so the fresh model binds immediately. With `-o` the model goes to the file and stdout carries a machine-confirmable **write envelope** (`outcome: applied`, `written: true`, the `output` path) — a success signal the agent can read instead of inspecting the file. Then edit it like any other:
 
 ```bash
 dmtool model new --id catalog --locale en_US --root Catalog -o /tmp/created.dm.json \
-  && echo "created /tmp/created.dm.json"
-dmtool -m /tmp/created.dm.json model validate | jq -c '{ok, valid, fields: (.data.fields|length)}'
+  | jq -c '{outcome, written, output}'
+dmtool -m /tmp/created.dm.json model check | jq -c '{ok, valid, fields: (.data.fields|length)}'
 ```
 
 ```output
-created /tmp/created.dm.json
+{"outcome":"applied","written":true,"output":"/tmp/created.dm.json"}
 {"ok":true,"valid":true,"fields":0}
 ```
 
@@ -177,7 +177,7 @@ dmtool -m /tmp/struct.dm.json field remove /Order/DeliveryDate --cascade
 The edited model still passes the real kernel consistency check:
 
 ```bash
-dmtool -m /tmp/struct.dm.json model validate | jq -c "{outcome,valid,diagnostics}"
+dmtool -m /tmp/struct.dm.json model check | jq -c "{outcome,valid,diagnostics}"
 ```
 
 ```output
@@ -282,6 +282,42 @@ dmtool -m /tmp/struct2.dm.json group read /Subscription/Addons | jq -c '.data'
 ```
 
 → `changed.indexField: Name` and the read's `data.indexField` confirm the row-key landed. `--clear-index-field` removes it; an index field on a single (non-repeating) group is refused.
+
+## group modify — the row sort (display order)
+
+A repetition list can also declare how its rows are **sorted for display** — one or more direct-child fields, each `:asc` (default) or `:desc`, applied in order. `group modify --sort-field` sets them (repeat the flag for a multi-key sort; replaces any existing sort), and `group read` echoes `data.sortFields`. This is a display/USB attribute — it does not change how rules or computations evaluate (they iterate in document order) — so it requires a repeatable group but never alters validation:
+
+```bash
+dmtool -m /tmp/struct2.dm.json group modify /Subscription/Addons \
+  --sort-field MonthlyFee:desc --sort-field Name
+dmtool -m /tmp/struct2.dm.json group read /Subscription/Addons | jq -c '.data.sortFields'
+```
+
+```output
+{
+  "target" : "group",
+  "op" : "modify",
+  "outcome" : "applied",
+  "ok" : true,
+  "summary" : "set /Subscription/Addons: sort by MonthlyFee desc, Name asc",
+  "changed" : {
+    "group" : "/Subscription/Addons",
+    "sortFields" : [ {
+      "name" : "MonthlyFee",
+      "order" : "DESC"
+    }, {
+      "name" : "Name",
+      "order" : "ASC"
+    } ]
+  },
+  "diagnostics" : [ ],
+  "written" : true,
+  "output" : "/tmp/struct2.dm.json"
+}
+[{"name":"MonthlyFee","order":"DESC"},{"name":"Name","order":"ASC"}]
+```
+
+→ `changed.sortFields` and the read's `data.sortFields` confirm the order landed (highest fee first, then name). `--clear-sort-fields` removes it; a sort field on a single (non-repeating) group, or a `:order` other than `asc`/`desc`, is refused.
 
 ## group remove — drop a whole sub-tree
 
@@ -635,7 +671,7 @@ dmtool -m /tmp/struct2-rn.json field rename /Order/DeliveryDate --to ShipDate \
 The `DeliveryNotBeforeOrder` condition now reads `/Order/ShipDate` where it read `/Order/DeliveryDate`, so the model still validates — a true reference-preserving rename, not a refusal:
 
 ```bash
-dmtool -m /tmp/struct2-rn.json model validate | jq -c '{valid}'
+dmtool -m /tmp/struct2-rn.json model check | jq -c '{valid}'
 ```
 
 ```output
@@ -671,7 +707,7 @@ dmtool -m /tmp/struct2-rn.json field move /Order/ShipDate --to /Order/ShippingAd
 The rule's error-entity path and its condition both followed the field — `DifferenceInDays(OrderDate, ShippingAddress/ShipDate)` now — so the model still validates:
 
 ```bash
-dmtool -m /tmp/struct2-rn.json model validate | jq -c '{valid}'
+dmtool -m /tmp/struct2-rn.json model check | jq -c '{valid}'
 ```
 
 ```output
@@ -728,7 +764,7 @@ order.dm.json
 The composed pair re-validates through the real kernel — the base resolves the sub-model by id from the same directory (and the gate already re-validated *before* writing, so a bad split never reaches disk):
 
 ```bash
-dmtool -m /tmp/struct2-ext/order.dm.json model validate | jq -c '{valid}'
+dmtool -m /tmp/struct2-ext/order.dm.json model check | jq -c '{valid}'
 ```
 
 ```output
@@ -747,7 +783,7 @@ dmtool -m /tmp/struct2-ext/order.dm.json include inline billing-address \
 ```
 
 ```bash
-jq -c '[.. | objects | select(has("modelAlias")) | .modelAlias]' /tmp/struct2-ext/order.dm.json && dmtool -m /tmp/struct2-ext/order.dm.json model validate | jq -c '{valid}'
+jq -c '[.. | objects | select(has("modelAlias")) | .modelAlias]' /tmp/struct2-ext/order.dm.json && dmtool -m /tmp/struct2-ext/order.dm.json model check | jq -c '{valid}'
 ```
 
 ```output

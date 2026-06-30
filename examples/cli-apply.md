@@ -3,7 +3,7 @@
 *2026-06-11T23:51:39Z by Showboat 0.6.1*
 <!-- showboat-id: ba00a911-930f-43c4-bd51-82507f783de5 -->
 
-The **apply** verb is dmtool's *session* surface — the companion to the single-shot edit verbs in [`cli-structure-edit.md`](cli-structure-edit.md) and [`cli-edit-loop.md`](cli-edit-loop.md). It runs an **ordered array of op-records** against ONE model in a single session: one read → ordered surgery → one terminal kernel gate → one write, with **atomic rollback** (a mid-sequence failure writes NOTHING). Each op-record is `{target, op, …args}` — the same axes as the standalone verbs (`{target, op}` from `manifest`, the per-op keys from each verb's params) — *not* `batch`'s `{verb, args}`. The call is `dmtool -m <model> apply <ops.json>` from the repo root; `--dry-run` runs the gate but writes nothing, `-o` redirects the write. **apply writes IN PLACE by default**, so every section below operates on a `/tmp` copy and leaves the committed fixture untouched. Each op emits a per-op envelope (edits land `staged`, reads land `read` + `data`); the wrapper is `{ops, committed, failedAt, written, results[]}`. Some steps also use `jq`. Re-check the captured output with `uvx showboat@0.6.1 verify examples/cli-apply.md` (exit 0 = it still matches the live CLI).
+The **apply** verb is dmtool's *session* surface — the companion to the single-shot edit verbs in [`cli-structure-edit.md`](cli-structure-edit.md) and [`cli-edit-loop.md`](cli-edit-loop.md). It runs an **ordered array of op-records** against ONE model in a single session: one read → ordered surgery → one terminal kernel gate → one write, with **atomic rollback** (a mid-sequence failure writes NOTHING). Each op-record is `{target, op, …args}` — the same axes as the standalone verbs (`{target, op}` from `manifest`, the per-op keys from each verb's params) — *not* `batch`'s `{verb, args}`. The call is `dmtool -m <model> apply <ops.json>` from the repo root; `--dry-run` runs the gate but writes nothing, `-o` redirects the write. **apply writes IN PLACE by default**, so every section below operates on a `/tmp` copy and leaves the committed fixture untouched. Each op emits a per-op envelope (edits land `staged`/`written:false` — the write is **atomic at the wrapper**, not per op, so a per-op `written:false` is NOT a failure; reads land `read` + `data`); the wrapper is `{ops, committed, summary, failedAt, written, results[]}`, and its `committed`/`written` + the human `summary` are the authoritative net-effect signals (read those, not the per-op flags). Some steps also use `jq`. Re-check the captured output with `uvx showboat@0.6.1 verify examples/cli-apply.md` (exit 0 = it still matches the live CLI).
 
 ## Discover the frame — `schema apply`
 
@@ -69,6 +69,7 @@ dmtool -m /tmp/apply-atomic.dm.json apply /tmp/apply-atomic-ops.json
   "verb" : "apply",
   "ops" : 2,
   "committed" : true,
+  "summary" : "2 op(s) committed, written to /tmp/apply-atomic.dm.json",
   "failedAt" : null,
   "written" : true,
   "output" : "/tmp/apply-atomic.dm.json",
@@ -102,7 +103,7 @@ dmtool -m /tmp/apply-atomic.dm.json apply /tmp/apply-atomic-ops.json
 → `committed: true`, `written: true` (`output` names the file) — the **whole sequence** passed the one terminal kernel gate and was written atomically. Note each `result` is `outcome: "staged"`, **not** `applied`: a per-op edit is *staged* in the session (`written: false` on each), and only the wrapper's terminal gate commits the lot. `changed.added` and `changed.rule` name what each op staged. The rule references `/Order/Discount` — a field that did not exist when the file was read; it works because op 0 staged it *first* in the same session.
 
 ```bash
-dmtool -m /tmp/apply-atomic.dm.json model validate | jq -c "{valid, diagnostics}"
+dmtool -m /tmp/apply-atomic.dm.json model check | jq -c "{valid, diagnostics}"
 echo "--- field present: $(dmtool -m /tmp/apply-atomic.dm.json model describe | jq -c "[.data.fields[].path | select(test(\"Discount\"))]")"
 echo "--- rule present: $(dmtool -m /tmp/apply-atomic.dm.json export | grep -E "^- rules:")"
 ```
@@ -133,6 +134,7 @@ dmtool -m /tmp/apply-midread.dm.json apply /tmp/apply-midread-ops.json
   "verb" : "apply",
   "ops" : 2,
   "committed" : true,
+  "summary" : "2 op(s) committed, written to /tmp/apply-midread.dm.json",
   "failedAt" : null,
   "written" : true,
   "output" : "/tmp/apply-midread.dm.json",
@@ -188,6 +190,7 @@ dmtool -m /tmp/apply-rollback.dm.json apply /tmp/apply-rollback-ops.json 2>&1; e
   "verb" : "apply",
   "ops" : 2,
   "committed" : false,
+  "summary" : "rolled back at op 1 — nothing written (atomic: all-or-nothing)",
   "failedAt" : 1,
   "written" : false,
   "results" : [ {
@@ -249,6 +252,7 @@ dmtool -m /tmp/apply-typo.dm.json apply /tmp/apply-typo-ops.json 2>&1; echo "(ex
   "verb" : "apply",
   "ops" : 1,
   "committed" : false,
+  "summary" : "rolled back at op 0 — nothing written (atomic: all-or-nothing)",
   "failedAt" : 0,
   "written" : false,
   "results" : [ {
@@ -304,6 +308,7 @@ dmtool -m /tmp/apply-xtype.dm.json apply /tmp/apply-xtype-ops.json 2>&1; echo "(
   "verb" : "apply",
   "ops" : 1,
   "committed" : false,
+  "summary" : "rolled back at op 0 — nothing written (atomic: all-or-nothing)",
   "failedAt" : 0,
   "written" : false,
   "results" : [ {
@@ -349,6 +354,7 @@ dmtool -m /tmp/apply-refactor.dm.json apply /tmp/apply-refactor-ops.json
   "verb" : "apply",
   "ops" : 3,
   "committed" : true,
+  "summary" : "3 op(s) committed, written to /tmp/apply-refactor.dm.json",
   "failedAt" : null,
   "written" : true,
   "output" : "/tmp/apply-refactor.dm.json",
@@ -395,7 +401,7 @@ dmtool -m /tmp/apply-refactor.dm.json apply /tmp/apply-refactor-ops.json
 → All three ops `staged`, then `committed: true` / `written: true` — one atomic commit. The **rename** op's `changed.rewroteReferences` lists `/Order/DISCOUNT_NOT_NEGATIVE` — the rule added in op 1 — proving its reference was rewritten from `/Order/Discount` to `/Order/Rebate` as part of the same transaction. The gate ran against the *live* session (it saw the field op 0 had just staged), and validation was deferred to the one terminal gate, exactly like the Local ops.
 
 ```bash
-dmtool -m /tmp/apply-refactor.dm.json model validate | jq -c "{valid, diagnostics}"
+dmtool -m /tmp/apply-refactor.dm.json model check | jq -c "{valid, diagnostics}"
 echo "fields named Discount/Rebate now: $(dmtool -m /tmp/apply-refactor.dm.json model describe | jq -c "[.data.fields[].path | select(test(\"Discount|Rebate\"))]")"
 ```
 
