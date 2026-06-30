@@ -105,7 +105,7 @@ xattr -d com.apple.quarantine dmtool-macos-arm64
 
 The CLI is **self-describing** — `dmtool --help`, `dmtool manifest`, `dmtool operators`, `dmtool schema <target> <op>`.
 
-> The native binary covers rule **authoring / checking / structure / read**. The runtime-evaluation verbs (`model eval`, `rule test`, `model compute`) require a JVM and are **not** in the native binary.
+> The native binary covers rule **authoring / checking / structure / read** **and runtime evaluation** — `model eval`, `rule eval`, `model compute`, `model seed` run on the native-safe interpreter (kernel-free). Only the opt-in `--kernel` engine (the A12 kernel via Groovy) requires a JVM and is refused under the native profile.
 
 ## What you can do — a quick tour
 
@@ -160,6 +160,29 @@ dmtool -m order.dm.json rule add rule.json
 **The key idea — polarity:** a condition is **true on the *violation*, not the requirement.** To enforce *"delivery must not be before the order date,"* you write the case to **reject** — `DifferenceInDays(OrderDate, DeliveryDate) < 0` is true exactly when delivery *is* before order (the `AllFieldsFilled(…)` guard skips the check until both dates are present). Writing the requirement directly would flag every *valid* document — the inverted-polarity trap the bundled skill helps you avoid.
 
 Every result is a uniform JSON envelope (`{ok, valid, outcome, changed, diagnostics[], …}`) with structured, fix-oriented diagnostics.
+
+### From a JSON Schema or OpenAPI document
+
+Originate a model from an existing **JSON Schema** or **OpenAPI** spec (3.0 / 3.1 / 3.2), and export one back out — the same two verbs handle both, because OpenAPI's Schema Object *is* a JSON-Schema dialect:
+
+```sh
+# OpenAPI → model: --dialect AUTO-detects 3.0/3.1/3.2; --component picks the components/schemas entry
+dmtool model import-jsonschema \
+  --schema petstore.openapi.json \
+  --component Order \
+  -o order.dm.json
+
+# …or import the WHOLE document as a bundle — one model per component, wired by includes
+dmtool model import-jsonschema \
+  --schema petstore.openapi.json \
+  --out-dir ./models/
+
+# model → a drop-in OpenAPI components/schemas envelope
+dmtool -m order.dm.json model export-jsonschema \
+  --dialect OPENAPI_31 --wrap-openapi > order.openapi.json
+```
+
+Import is **best-effort** — it maps as much as possible (even unbounded arrays and recursive `$ref`s) and flags every guess in the stderr report; `--strict` omits everything uncertain. Constraints with no field-config home become real a12 **rules** (`required`/`enum`/`pattern`, exclusive bounds, `multipleOf`, `const`, `dependentRequired`, `uniqueItems`, discriminators, `if`/`then`/`else`, `not`, `contains`), each kernel-checked. `--dialect`, `--component`, `--out-dir`, and `--wrap-openapi` are self-describing: `dmtool model import-jsonschema --help` enumerates every value and its implication.
 
 ## Worked examples
 

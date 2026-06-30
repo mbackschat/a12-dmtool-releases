@@ -13,7 +13,7 @@ dmtool --version
 ```
 
 ```output
-a12-dmkits 0.7.0
+a12-dmkits 0.8.0
   kernel: 30.8.1 (built) / 30.8.1 (runtime)
   A12 Tools distribution: 2025.06-ext5
   catalog verified against: 30.8.1
@@ -29,7 +29,7 @@ dmtool manifest | jq .version
 
 ```output
 {
-  "rulekit": "0.7.0",
+  "rulekit": "0.8.0",
   "kernel": {
     "builtAgainst": "30.8.1",
     "a12Distribution": "2025.06-ext5",
@@ -64,7 +64,7 @@ wrote /tmp/dmver-28.0.0.json (older, same major) and /tmp/dmver-99.0.0.json (new
 **Tolerant** — the older same-major model still validates (`valid:true`, exit 0), and the difference is made explicit as an informational `RK_MODEL_VERSION_SKEW`:
 
 ```bash
-dmtool -m /tmp/dmver-28.0.0.json model validate | jq -c '{valid, diagnostics: [.diagnostics[] | {severity, code}]}'
+dmtool -m /tmp/dmver-28.0.0.json model check | jq -c '{valid, diagnostics: [.diagnostics[] | {severity, code}]}'
 
 ```
 
@@ -75,7 +75,7 @@ dmtool -m /tmp/dmver-28.0.0.json model validate | jq -c '{valid, diagnostics: [.
 **Fail-fast** — a newer model the kernel can't load is rejected (`valid:false`, exit 1); rulekit codes the kernel's version-mismatch as `RK_MODEL_VERSION_INCOMPATIBLE` so an agent can branch on it:
 
 ```bash
-dmtool -m /tmp/dmver-99.0.0.json model validate > /tmp/dmver-out.json; echo "exit=$?"
+dmtool -m /tmp/dmver-99.0.0.json model check > /tmp/dmver-out.json; echo "exit=$?"
 jq -c '{valid, diagnostics: [.diagnostics[] | {severity, code, summary}]}' /tmp/dmver-out.json
 
 ```
