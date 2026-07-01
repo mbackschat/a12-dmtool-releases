@@ -30,8 +30,9 @@
 # model compute / model seed) DO run on the native binary via the kernel-free interpreter; only the opt-in
 # `--kernel` engine needs a JVM (see the project docs).
 set -uo pipefail
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-VERSION="v0.8.1"
+VERSION="v0.8.2"
 REPO="mbackschat/a12-dmtool-releases"
 # Host-provided dirs differ by agent: Claude Code sets CLAUDE_PLUGIN_*, Codex sets PLUGIN_* — accept both.
 DATA="${CLAUDE_PLUGIN_DATA:-${PLUGIN_DATA:-$HOME/.cache/dmtool-plugin}}"
@@ -79,11 +80,12 @@ if dev="$(dev_binary)"; then
 fi
 
 # --- PRODUCTION: download from the public mirror release ----------------------------------------------
-case "$(uname -s)/$(uname -m)" in
-  Darwin/arm64)  asset="dmtool-macos-arm64" ;;
-  Linux/x86_64)  asset="dmtool-linux-x64"   ;;
-  *) warn "no prebuilt binary for $(uname -s)/$(uname -m) yet — install dmtool manually"; exit 0 ;;
-esac
+ASSETS_FILE="$SCRIPT_DIR/release-assets.sh"
+[[ -f "$ASSETS_FILE" ]] || { warn "release asset manifest missing: $ASSETS_FILE"; exit 0; }
+# shellcheck source=release-assets.sh
+. "$ASSETS_FILE"
+asset="$(rk_release_asset_for_platform)" \
+  || { warn "no prebuilt binary for $(uname -s)/$(uname -m) yet — install dmtool manually"; exit 0; }
 
 if [[ ! -x "$DEST" ]]; then
   base="https://github.com/$REPO/releases/download/$VERSION"
