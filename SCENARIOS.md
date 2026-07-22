@@ -100,3 +100,10 @@ These are the **asks**, not worked transcripts. For step-by-step sessions **with
 1. In the subscription model, the effective fee must always be present.
 2. Here's a subscription to check: the base fee is 49.90 and nothing else is filled in. Is it valid? Explain.
 3. Now check the *stored data as-is*, without running the model's computations. Does that change the answer, and why?
+
+## filtered claim rules
+
+1. A policy with three or more claims over 1000 needs a fraud review — flag it.
+2. The approved claims must never add up to more than the policy's coverage limit.
+3. Flag a claim when it is bigger than all the other claims on the policy combined.
+4. Check this policy: coverage limit 3500, claim C1 1400 approved, claim C2 2600 approved, claim C3 1100 open. What does the model report — and why does each message sit where it sits?

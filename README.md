@@ -1,6 +1,8 @@
 # dmtool — release distribution + agent plugins (Claude Code, Codex)
 
-Public distribution for **`dmtool`**, a CLI for authoring and validating **A12 Kernel** document-model validation rules. This repository is **release-only** (binaries + the plugins are pushed here from a separate source repo); it is not where the tool is developed.
+**`dmtool`** is an agent-friendly, **self-describing** CLI for authoring, validating, and safely editing **A12 Kernel document models** — validation rules, computations, and structure — one native binary, **JSON in / JSON out**. Every edit is confirmed by the embedded **real A12 kernel** before it is written, and runtime evaluation (which rules fire on a real document) runs on a clean-room, kernel-exact **interpreter**. Point your coding agent at it: the tool describes itself (`manifest` / `operators` / `schema`), and the bundled skill teaches the judgment calls.
+
+This repository is the **public distribution** — release-only (binaries + the plugins are pushed here from a separate source repo); it is not where the tool is developed.
 
 > **Not an official A12 / mgm artifact.** `dmtool` is an independent tool built against the public A12 Kernel.
 
@@ -17,7 +19,7 @@ AllFieldsFilled(OrderDate, DeliveryDate) And DifferenceInDays(OrderDate, Deliver
 
 Writing these by hand is fragile: a mistyped path, a wrong operator or decimal scale, or — most insidious — **inverted polarity** (the condition true on the *requirement* instead of the *violation*) slips through until the kernel runs, if it's caught at all.
 
-**`dmtool` closes that gap from the command line** — one self-describing native binary, **JSON in / JSON out**, no Java toolchain. It authors, reads, and safely edits a model's rules *and* structure, and **confirms every result against the real A12 kernel**, so *valid* means the engine accepts it, not that it merely looks right.
+**`dmtool` closes that gap from the command line** — one self-describing native binary, **JSON in / JSON out**, no Java toolchain. It authors, reads, and safely edits a model's rules *and* structure — **every edit is confirmed by the embedded real A12 kernel before it is written**, so *valid* means the engine accepts it, not that it merely looks right — and it runs rules against real documents on a **clean-room interpreter** held kernel-exact by a differential test estate and a tri-verified conformance corpus.
 
 It is built **agent-first** — the #1 use is inside a coding-agent session (Claude Code, Codex):
 
@@ -27,7 +29,7 @@ It is built **agent-first** — the #1 use is inside a coding-agent session (Cla
 
 ### A session, in natural language
 
-You don't type `dmtool` — your agent does. You state the rule in plain language; the agent resolves the model, reasons about **polarity** and **operator semantics**, and the **real kernel** confirms the result before anything is written:
+You don't type `dmtool` — your agent does. You state the rule in plain language; the agent resolves the model, reasons about **polarity** and **operator semantics**, and the **real kernel** confirms the authored rule before anything is written:
 
 **You —** *"In the order model, a delivery date must never be before the order date."*
 
@@ -94,18 +96,19 @@ Codex uses the **same on-demand installer**, so the *Activation* note above appl
 
 ## Install — raw binary (no agent)
 
-Download the binary for your OS from the latest [Release](../../releases) + `SHA256SUMS`, verify, and put it on your PATH:
+Download the binary for your OS — `dmtool-macos-arm64`, `dmtool-linux-x64`, `dmtool-linux-arm64`, or `dmtool-windows-x64.exe` (the assets are platform-suffixed because four platforms share one release page) — from the latest [Release](../../releases) + `SHA256SUMS`, verify, and put it on your PATH:
 
 ```sh
 shasum -a 256 -c SHA256SUMS            # verify integrity
-chmod +x dmtool-linux-arm64            # or dmtool-linux-x64 / dmtool-macos-arm64
 # macOS only, if Gatekeeper blocks a browser download:
 xattr -d com.apple.quarantine dmtool-macos-arm64
+# rename on install, so the tool on your PATH is a stable `dmtool`:
+mv dmtool-macos-arm64 dmtool && chmod +x dmtool   # or dmtool-linux-x64 / dmtool-linux-arm64
 ```
 
 The CLI is **self-describing** — `dmtool --help`, `dmtool manifest`, `dmtool operators`, `dmtool schema <target> <op>`.
 
-> The native binary covers rule **authoring / checking / structure / read** **and runtime evaluation** — `model eval`, `rule eval`, `model compute`, `model seed` run on the native-safe interpreter (kernel-free). Only the opt-in `--kernel` engine (the A12 kernel via Groovy) requires a JVM and is refused under the native profile.
+> The native binary covers rule **authoring / checking / structure / read** **and runtime evaluation** — `model eval`, `rule eval`, `model compute`, `model seed` run on the native-safe interpreter (kernel-free), the sole runtime eval engine on every target.
 
 ## What you can do — a quick tour
 
@@ -120,7 +123,7 @@ dmtool schema rule check        # a verb's exact input / output shape
 
 ### From zero to a kernel-checked rule
 
-Create a model, add fields, and attach a validation rule — every step confirmed by the **real A12 kernel** (this whole sequence runs as-is):
+Create a model, add fields, and attach a validation rule — every authoring step confirmed by the **real A12 kernel** before it is written (this whole sequence runs as-is):
 
 ```sh
 # 1. a new, empty, kernel-valid model
@@ -161,6 +164,20 @@ dmtool -m order.dm.json rule add rule.json
 
 Every result is a uniform JSON envelope (`{ok, valid, outcome, changed, diagnostics[], …}`) with structured, fix-oriented diagnostics.
 
+### Review an edit semantically
+
+`model diff` is a structural semantic diff: it independently binds both models, ignores formatting noise, and reports typed field, group, rule, computation, typedef, authored include/import, and model-configuration changes with per-aspect deltas, review-impact tiers, and reason codes. Multi-model two-file diffs resolve each side from `-w` or its own folder; `--since` resolves the base model and dependencies at the Git ref. Delta JSON preserves deterministic `before`/`after` strings and adds tagged `beforeValue`/`afterValue` scalars or string lists for typed consumers.
+
+When base and head contain different revisions of the same referenced model id, pass repeatable `--base-workspace` and `--head-workspace` roots; shared `-w` is for a common dependency snapshot.
+
+```sh
+dmtool model diff before.dm.json after.dm.json
+dmtool model diff --base-workspace old --head-workspace new old/app.dm.json new/app.dm.json
+dmtool -m order.dm.json model diff --since HEAD
+```
+
+A field diff covers complete typed config, requiredness, enum values, metadata, and flags; removing or retyping a field with rule/computation readers is HIGH. A rule diff includes its error entity, localized messages, and metadata. A group diff covers repeatability, index/sort declarations, mount alias/options, metadata, and mixed authored ordering. A computation operation changing from `Price × Quantity` to `Price + Quantity` is a first-class `COMPUTATION_CHANGED` modification. Typedefs carry complete config/metadata; authored includes and type-definition imports carry purpose/reference separately from expanded content. The stable `CONFIG model` element covers identity/version, locales, scalar settings, supported characters, base year, labels, comment, annotations, and roles without set-order noise. Rule polarity inversions are `POLARITY_INVERTED` (HIGH), while message-only changes remain LOW. The JSON shape is self-described by `dmtool schema model diff`; `--text` gives the impact-sorted human view.
+
 ### From a JSON Schema or OpenAPI document
 
 Originate a model from an existing **JSON Schema** or **OpenAPI** spec (3.0 / 3.1 / 3.2), and export one back out — the same two verbs handle both, because OpenAPI's Schema Object *is* a JSON-Schema dialect:
@@ -188,13 +205,15 @@ Import is **best-effort** — it maps as much as possible (even unbounded arrays
 
 End-to-end walkthroughs of **every verb** — command + real captured output — live in [`examples/`](examples/) (full [index](examples/README.md)): discovering the tool, reading & **reviewing** a model (`model report` / `model diff`), the rule/computation edit loop, structure editing with the safe-delete gate, the atomic `apply` session, runtime evaluation, **JSON Schema ⇄ model** interop, custom field types & conditions, multi-file **workspaces**, and the version/compatibility surface.
 
+Want ideas for what to *ask*? [`SCENARIOS.md`](SCENARIOS.md) catalogues realistic **multi-step sessions** — ordered, plain-language asks you can hand to your agent verbatim: from-scratch authoring, evolving an existing model's rules, refactors, computations, and more.
+
 ## Changelog
 
 What changed in each release: [`CHANGELOG.md`](CHANGELOG.md).
 
 ## Licensing (per artifact)
 
-- **Native CLI binaries → EUPL-1.2.** They embed the A12 Kernel, so each binary is offered under the European Union Public Licence v1.2. See [`LICENSE`](LICENSE), [`NOTICE`](NOTICE), and [`THIRD_PARTY_NOTICES`](THIRD_PARTY_NOTICES). **Kernel source** (EUPL-1.2): <https://github.com/mgm-tp> (satisfies EUPL Art. 5).
+- **Native CLI binaries → EUPL-1.2.** They embed the A12 Kernel, so each binary is offered under the European Union Public Licence v1.2. See [`LICENSE`](LICENSE), [`NOTICE`](NOTICE), [`THIRD_PARTY_NOTICES`](THIRD_PARTY_NOTICES), and the embedded kernel's own dual licence in [`KERNEL-LICENSE`](KERNEL-LICENSE). **Kernel source** (EUPL-1.2): <https://github.com/mgm-tp> (satisfies EUPL Art. 5).
 - **Plugin source** (the skills + hooks, for both agents) **→ MIT.**
 
 No warranty; see the licence text.

@@ -4,6 +4,25 @@ All notable changes to the **publicly released `dmtool` artifacts** — the nati
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning is [SemVer](https://semver.org/) plus **A12 Kernel compatibility metadata** (the kernel each release targets is recorded per entry, never folded into the version string).
 
+## [0.9.0] — kernel 30.8.1
+
+The built-in interpreter becomes the **sole** runtime evaluation engine, verified bit-for-bit against the A12 kernel on real-world corpora; `model diff` becomes fully comprehensive; and the authoring surface gets a consistency pass. Two breaking changes.
+
+### Changed
+
+- **BREAKING:** the JVM-only `--kernel` eval engine is removed — runtime evaluation (`model eval` / `rule eval` / `model compute`) now runs solely on the native-safe interpreter on every target; the kernel is retained only for the consistency gate (`rule check` / `model check`).
+- **BREAKING:** `model import-jsonschema --format` is renamed **`--string-format`** (it selects the string-conversion strategy; `--format` elsewhere selects output rendering).
+
+### Added
+
+- **Kernel-parity interpreter:** the built-in evaluation engine now matches the A12 kernel bit-for-bit on two real-world corpora at zero divergences, closing a large semantics campaign.
+- **Authoring consistency pass:** element metadata across the `rule` / `group` / `config` families, new `include set-reference` / `include rename` verbs, operator-catalog DSL entry points (`dslEntry`), and the `field add --parent` alias.
+
+### Fixed
+
+- **`model diff` is now comprehensive** — fields, groups, computations, reusable type definitions, includes, and model identity/configuration are all first-class, eliminating the false “no change” results of earlier releases.
+- **Structured, coded refusals** on missing targets for read/query verbs, and hardened JSON-Schema import.
+
 ## [0.8.2] — kernel 30.8.1 (A12 Tools 2025.06-ext5)
 
 A platform-coverage patch release on the 0.8.x surface — no change to the model operations themselves.

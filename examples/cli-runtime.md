@@ -5,7 +5,7 @@
 
 The previous tours operated on the **model** — its rules and computations as text. This one runs a document **instance** (actual field data) through the runtime engine and asks the *runtime* questions: which rules **fire** on this data, and what does a computed field **evaluate to**? Two read-only verbs, both `JSON-in / JSON-out`, both invoked through `dmtool` (the launcher shim) from the repo root; some steps also use `jq`. The document instance is a small JSON file — a nested `{"fields":{…}}` tree, grouped exactly like the model.
 
-**The engine.** These runtime verbs default to the **native-safe interpreter** — a from-scratch evaluator that reproduces the A12 kernel's runtime semantics without the kernel's on-the-fly Groovy, so they run in the GraalVM native image too. Add **`--kernel`** to evaluate with the A12 kernel itself (JVM only; not available in the native image). The interpreter is verified rule-for-rule against the kernel, so the two agree on which rules fire and what computes. Output blocks are captured by [showboat](https://github.com/simonw/showboat); re-check them with `uvx showboat@0.6.1 verify examples/cli-runtime.md` (exit 0 = output still matches the live CLI).
+**The engine.** These runtime verbs run on the **native-safe interpreter** — a from-scratch evaluator that reproduces the A12 kernel's runtime semantics without the kernel's on-the-fly Groovy, so they run in the GraalVM native image too; it is the sole runtime eval engine on every target. The interpreter is verified rule-for-rule against the kernel, so the two agree on which rules fire and what computes. Output blocks are captured by [showboat](https://github.com/simonw/showboat); re-check them with `uvx showboat@0.6.1 verify examples/cli-runtime.md` (exit 0 = output still matches the live CLI).
 
 ## The document instance
 
@@ -24,7 +24,7 @@ cat /tmp/rt-order-violation.json
 
 ## model eval — which rules fire?
 
-`model eval` runs the engine over the instance and reports, under `data.fired`, the **error codes of every rule that fired** (a rule *fires* when its violation condition evaluates true on this data). `--rule <path>` narrows the report to one stored rule and adds a `data.rule.{name,fired}` verdict for it. Discover its directional **I/O contract** from the CLI itself with `schema model eval` — what it consumes (a document instance) and the `EvalDocResult` it returns. (We show `schema`, not `--help`, on purpose: the I/O contract is **identical on the JVM and native builds**, whereas the flag list differs — `--kernel` is JVM-only and absent from the native binary.)
+`model eval` runs the engine over the instance and reports, under `data.fired`, the **error codes of every rule that fired** (a rule *fires* when its violation condition evaluates true on this data). `--rule <path>` narrows the report to one stored rule and adds a `data.rule.{name,fired}` verdict for it. Discover its directional **I/O contract** from the CLI itself with `schema model eval` — what it consumes (a document instance) and the `EvalDocResult` it returns. (We show `schema`, not `--help`, on purpose: the I/O contract is **identical on the JVM and native builds**, whereas `--help` can differ by picocli synopsis wrapping between builds.)
 
 ```bash
 dmtool schema model eval \
@@ -41,7 +41,8 @@ dmtool schema model eval \
     "fired",
     "messages",
     "rule",
-    "unsupported"
+    "unsupported",
+    "validationMode"
   ]
 }
 ```
@@ -131,6 +132,44 @@ dmtool -m examples/models/order-ruled.dm.json \
 
 → `data.rule.fired: false`, empty `fired`/`messages` — the compliant order does **not** trip the rule. The two runs together are the proof: flip the one date that matters and the verdict flips with it. Same rule, opposite data, opposite outcome.
 
+## model eval — partial validation for one page
+
+`--relevant` exposes the form engine's partial/wizard-page validation. The JSON array names the field or group instances currently relevant; an omitted index or `[*]` means every repetition, while `[n]` selects one row. A rule runs only when its error field is relevant, and an omitted operand is UNKNOWN. Selecting only `DeliveryDate` therefore suppresses the date comparison because `OrderDate` is not on this page:
+
+```bash
+dmtool -m examples/models/order-ruled.dm.json \
+  model eval --instance /tmp/rt-order-violation.json --no-computations \
+  --relevant '["/Order/DeliveryDate"]' \
+  | jq '{mode:.data.validationMode,fired:.data.fired}'
+```
+
+```output
+{
+  "mode": "partial",
+  "fired": []
+}
+```
+
+Selecting the `Order` group makes all of its descendants relevant, so the same violation fires:
+
+```bash
+dmtool -m examples/models/order-ruled.dm.json \
+  model eval --instance /tmp/rt-order-violation.json --no-computations \
+  --relevant '["/Order"]' \
+  | jq '{mode:.data.validationMode,fired:.data.fired}'
+```
+
+```output
+{
+  "mode": "partial",
+  "fired": [
+    "DELIVERY_BEFORE_ORDER"
+  ]
+}
+```
+
+Global fields are added automatically even when the caller omits them. A concrete repetition pointer such as `/Order/Lines[2]/Quantity` selects row 2; `/Order/Lines[*]/Quantity` selects all rows.
+
 ## rule eval — one rule, three outcomes (fired / passed / suppressed)
 
 `model eval --rule` answers "did it fire?" — but `fired: false` is **two** different things: the rule was evaluated and *passed*, or it was **never evaluated** because a field it references is formally invalid (the engine skips a rule whose operand is *unknown*). `rule eval` is the rule-first verb that tells them apart, with a three-way `verdict`. First the violation instance from above — the rule fires:
@@ -197,7 +236,7 @@ dmtool -m examples/models/order-ruled.dm.json \
 
 ## model eval — a candidate rule, not yet stored
 
-You can also evaluate a rule that **isn't in the model** — `--condition "<DSL>" --field <path>` injects a one-off candidate (named `EvalDocCandidate` by default, error code `EVAL_DOC`), runs it against the instance, and tells you whether *it* fired. Nothing is persisted; it is the runtime twin of `rule check` (which only asks "is this valid?"). Here the candidate caps quantity at 100, and we feed it an order of 150.
+You can also evaluate a rule that **isn't in the model** — `--condition "<DSL>" --field <path>` **injects** a one-off candidate (named `EvalDocCandidate` by default, error code `EVAL_DOC`) into the model, runs the **whole** document, and narrows `data.rule` to whether *it* fired. Nothing is persisted; it is the runtime twin of `rule check` (which only asks "is this valid?"), and — because the candidate is injected and the full model runs — the candidate's message is row-indexed exactly as if you'd persisted it, and the other rules still report (here `EligibilityCheck` is an external `CustomCondition` with no impl, so it lands in `data.unsupported`). Here the candidate caps quantity at 100, and we feed it an order of 150.
 
 ```bash
 cat > /tmp/rt-qty-over.json <<'JSON'
@@ -224,10 +263,15 @@ dmtool -m examples/models/order-ruled.dm.json \
     "messages" : [ {
       "code" : "QTY_CAP",
       "rule" : "/Order/EvalDocCandidate",
-      "field" : "/Order/Quantity",
+      "field" : "/Order[1]/Quantity",
       "severity" : "ERROR",
       "type" : "VALUE_ERROR",
-      "message" : "EvalDocCandidate"
+      "message" : "EvalDocCandidate",
+      "referenced" : [ "/Order[1]/Quantity" ]
+    } ],
+    "unsupported" : [ {
+      "name" : "/Order/EligibilityCheck",
+      "reason" : "unregistered custom condition \"ExternalEligibility\" — register it in the custom-condition registry"
     } ],
     "rule" : {
       "name" : "/Order/EvalDocCandidate",
@@ -239,7 +283,7 @@ dmtool -m examples/models/order-ruled.dm.json \
 }
 ```
 
-→ The candidate fired (`QTY_CAP`, `data.rule.fired: true`) on `Quantity = 150`, attributed to the synthetic rule `/Order/EvalDocCandidate`. Drop the quantity below the cap and it would report `fired: false` — same dry-run, no write to the model.
+→ The candidate fired (`QTY_CAP`, `data.rule.fired: true`) on `Quantity = 150`, attributed to the synthetic rule `/Order/EvalDocCandidate` at the row-indexed `/Order[1]/Quantity`. Drop the quantity below the cap and it would report `fired: false` — same dry-run, no write to the model.
 
 ## model compute — what does a computed field evaluate to?
 
@@ -328,7 +372,7 @@ dmtool -m examples/models/subscription-computed.dm.json \
 
 ## model seed — generate a sample instance
 
-Writing instances by hand (as above) is fine for one check, but tedious for exploring a model. `model seed` **generates** a valid sample instance — every field a kind-appropriate value (numbers in scale, dates in their format, an enum a real member), repeatable groups populated — using the same kernel-free interpreter generator. It is **native-safe** (no kernel) and **deterministic** for a fixed `--seed`, and `--rows <group>:<n>` sets how many rows a repeatable group gets. Its output is the very `{"fields":{…}}` shape the runtime verbs consume.
+Writing instances by hand (as above) is fine for one check, but tedious for exploring a model. `model seed` **generates** a best-effort, model-derived **sample candidate** — every field a kind-appropriate value (numbers in scale, dates in their format, an enum a real member), repeatable groups populated — using the same kernel-free interpreter generator. It is **native-safe** (no kernel) and **deterministic** for a fixed `--seed`, and `--rows <group>:<n>` sets how many rows a repeatable group gets. Its output is the very `{"fields":{…}}` shape the runtime verbs consume.
 
 ```bash
 dmtool -m examples/models/order-ruled.dm.json \
@@ -340,7 +384,7 @@ dmtool -m examples/models/order-ruled.dm.json \
 {"topFields":13,"items":2,"itemKeys":["Count","Sku"]}
 ```
 
-→ The model's shape drives the result: every top-level field present, the `Items` group instantiated with the **2** rows requested, each row carrying its declared fields. Values are random-but-valid; the structure is the model's.
+→ The model's shape drives the result: every top-level field present, the `Items` group instantiated with the **2** rows requested, each row carrying its declared fields. Values are random, kind-appropriate best-effort samples; the structure is the model's.
 
 Because the output IS a document instance, it round-trips straight into `model eval` — generate, then evaluate, no hand-authoring:
 
@@ -353,7 +397,7 @@ dmtool -m examples/models/order-ruled.dm.json model eval --instance /tmp/rt-seed
 {"outcome":"read"}
 ```
 
-→ `outcome: "read"` — the generated instance is a valid document the runtime accepts.
+→ `outcome: "read"` — the eval **ran** over the instance (it parsed and evaluated). `read` is the read-verb's outcome; it is **not** a claim that the document passed validation or is model-accepted — a fired rule would still return `outcome:"read"`, so read `data.fired` for any violations.
 
 ## Recap
 
@@ -364,7 +408,7 @@ Read-only runtime verbs over a nested `{"fields":{…}}` instance — and `model
 | `model eval` | which rules fire on this data? | `data.fired` (codes) + `data.rule.{name,fired}` with `--rule` | violation fired, compliant did not (same rule, flipped date) |
 | `model eval --condition/--field` | would *this* candidate fire? | `data.rule.fired` | one-off `QTY_CAP` fired on `Quantity 150`, not persisted |
 | `model compute` | what does a computed field evaluate to? | `data.computed[].{field,value,outcome}` | `[BaseFee]` = `49.9`; empty operand = `0` (empty-as-0) |
-| `model seed` | give me a valid sample instance | the `{"fields":{…}}` document itself | structure matches the model; round-trips into `eval` |
+| `model seed` | give me a best-effort sample candidate | the `{"fields":{…}}` document itself | structure matches the model; round-trips into `eval` |
 
 Neither verb writes (`written: false`) — they evaluate the *model* against the *instance*, no mutation. The instance carries only the fields a check needs; everything else is absent (and, for numbers, reads as `0`).
 
