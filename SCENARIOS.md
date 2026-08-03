@@ -107,3 +107,8 @@ These are the **asks**, not worked transcripts. For step-by-step sessions **with
 2. The approved claims must never add up to more than the policy's coverage limit.
 3. Flag a claim when it is bigger than all the other claims on the policy combined.
 4. Check this policy: coverage limit 3500, claim C1 1400 approved, claim C2 2600 approved, claim C3 1100 open. What does the model report — and why does each message sit where it sits?
+
+## repeated computation outcomes keep their row identity
+
+1. Survey charges in this permit model must be whole numbers with at most four integer digits. Make that field constraint explicit and verify that the model remains valid.
+2. Now calculate the model's computed fields for this permit application. Explain what happened to the survey charge in each site-section row, using the result itself to identify the row. Do not modify the document. ```json {"Permit":{"SiteSections":[{"Area":75},{"SurveyCharge":50},{"Area":700}]}} ```

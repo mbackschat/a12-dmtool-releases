@@ -32,10 +32,18 @@
 set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-VERSION="v0.10.1"
+VERSION="v0.11.0"
 REPO="mbackschat/a12-dmtool-releases"
-# Host-provided dirs differ by agent: Claude Code sets CLAUDE_PLUGIN_*, Codex sets PLUGIN_* — accept both.
-DATA="${CLAUDE_PLUGIN_DATA:-${PLUGIN_DATA:-$HOME/.cache/dmtool-plugin}}"
+# Hook hosts provide plugin-specific data dirs, but a skill-launched shell is not a hook: current Codex does
+# not inject PLUGIN_DATA there. Its workspace sandbox also need not admit HOME. Fall back to the host's
+# writable temporary directory so on-demand delivery works in the clean session that selected the skill.
+if [[ -n "${CLAUDE_PLUGIN_DATA:-}" ]]; then
+  DATA="$CLAUDE_PLUGIN_DATA"
+elif [[ -n "${PLUGIN_DATA:-}" ]]; then
+  DATA="$PLUGIN_DATA"
+else
+  DATA="${TMPDIR:-/tmp}/dmtool-plugin-${UID:-user}"
+fi
 PLUGIN_ROOT_DIR="${CLAUDE_PLUGIN_ROOT:-${PLUGIN_ROOT:-.}}"
 ENV_FILE="${CLAUDE_ENV_FILE:-${CODEX_ENV_FILE:-}}"
 # The cache key is the VERSION: each release lives at its own path, so an older cached binary cannot shadow
@@ -44,9 +52,9 @@ BIN_ROOT="$DATA/bin"
 BIN_DIR="$BIN_ROOT/$VERSION"
 DEST="$BIN_DIR/dmtool"
 STABLE="$BIN_ROOT/dmtool"   # self-correcting symlink → the current version's binary (deterministic path)
-mkdir -p "$BIN_DIR"
 
 warn() { echo "dmtool plugin: $*" >&2; }
+mkdir -p "$BIN_DIR" 2>/dev/null || { warn "cache directory is not writable: $BIN_DIR"; exit 0; }
 # Best-effort PATH via the host env-file if one is offered (honored only by some hosts / some events). The
 # binary is always at the deterministic $STABLE path, so the agent can invoke `dmtool` there directly — the
 # skill instructs exactly that, because a script the agent runs mid-session can't reliably inject PATH.
@@ -54,7 +62,14 @@ put_on_path() { [[ -n "$ENV_FILE" ]] && echo "export PATH=\"$BIN_DIR:\$PATH\"" >
 # Repoint the stable path at the resolved binary (tracks the pinned VERSION, never stale across a bump — it
 # also replaces any legacy fixed-path binary left by an older install), export PATH best-effort, and PRINT
 # the absolute path so the agent can run dmtool there even when PATH injection didn't take.
-finalize() { ln -sf "$DEST" "$STABLE"; put_on_path; echo "dmtool ready: $STABLE"; }
+finalize() {
+  [[ -x "$DEST" ]] || { warn "resolved binary is not executable: $DEST"; return 1; }
+  ln -sf "$DEST" "$STABLE" 2>/dev/null \
+    || { warn "cannot update the stable binary path: $STABLE"; return 1; }
+  [[ -x "$STABLE" ]] || { warn "stable binary path is not executable: $STABLE"; return 1; }
+  put_on_path
+  echo "dmtool ready: $STABLE"
+}
 # Bound disk to the current version: drop sibling version dirs + the legacy version-less SHA256SUMS. The old
 # fixed-path binary at $STABLE is replaced by the symlink in finalize(), so an upgrade self-heals its disk.
 prune_stale_cache() {
@@ -75,7 +90,9 @@ dev_binary() {
   return 1
 }
 if dev="$(dev_binary)"; then
-  ln -sf "$dev" "$DEST"; finalize
+  ln -sf "$dev" "$DEST" 2>/dev/null \
+    || { warn "cannot install the local binary at: $DEST"; exit 0; }
+  finalize || exit 0
   exit 0
 fi
 
@@ -87,19 +104,34 @@ ASSETS_FILE="$SCRIPT_DIR/release-assets.sh"
 asset="$(rk_release_asset_for_platform)" \
   || { warn "no prebuilt binary for $(uname -s)/$(uname -m) yet — install dmtool manually"; exit 0; }
 
+base="https://github.com/$REPO/releases/download/$VERSION"
+checksum_file="$BIN_DIR/SHA256SUMS"
+checksum_tmp="$checksum_file.tmp"
+refuse_unverified() {
+  rm -f "$DEST" "$STABLE" "$checksum_file" "$checksum_tmp" 2>/dev/null || true
+}
+
 if [[ ! -x "$DEST" ]]; then
-  base="https://github.com/$REPO/releases/download/$VERSION"
   curl -fsSL "$base/$asset" -o "$DEST" || { warn "download failed: $base/$asset"; rm -f "$DEST"; exit 0; }
   chmod +x "$DEST"
-  if curl -fsSL "$base/SHA256SUMS" -o "$BIN_DIR/SHA256SUMS" 2>/dev/null; then
-    expected="$(awk -v a="$asset" '$2==a || $2=="*"a {print $1}' "$BIN_DIR/SHA256SUMS")"
-    actual="$(shasum -a 256 "$DEST" | awk '{print $1}')"
-    if [[ -n "$expected" && "$expected" != "$actual" ]]; then
-      warn "checksum mismatch for $asset — refusing the binary"; rm -f "$DEST"; exit 1
-    fi
-  fi
-  prune_stale_cache
 fi
+
+# Revalidate EVERY production cache use against the release checksum. Older installers could leave an
+# executable at this versioned path after checksum retrieval failed; executability therefore is not proof of
+# provenance. Fetching the small checksum manifest on a cache hit keeps the binary download cached while
+# making that legacy state (and later cache tampering) fail closed.
+curl -fsSL "$base/SHA256SUMS" -o "$checksum_tmp" 2>/dev/null \
+  || { warn "checksum download failed — refusing the unverified binary"; refuse_unverified; exit 0; }
+mv "$checksum_tmp" "$checksum_file"
+expected="$(awk -v a="$asset" '$2==a || $2=="*"a {print $1}' "$checksum_file")"
+[[ "$expected" =~ ^[0-9a-fA-F]{64}$ ]] \
+  || { warn "checksum entry missing or malformed for $asset — refusing the unverified binary"; refuse_unverified; exit 0; }
+actual="$(shasum -a 256 "$DEST" | awk '{print $1}')" \
+  || { warn "checksum calculation failed for $asset — refusing the unverified binary"; refuse_unverified; exit 0; }
+if [[ "$expected" != "$actual" ]]; then
+  warn "checksum mismatch for $asset — refusing the binary"; refuse_unverified; exit 0
+fi
+prune_stale_cache
 
 # Defense-in-depth (loud, never fatal): the resolved binary must self-report the pinned version. A mismatch
 # means the release tag's asset disagrees with the pin (a mispublished release) — surface it, never run a
@@ -108,4 +140,4 @@ have="$("$DEST" --version 2>/dev/null | awk 'NR==1{print $2}')"
 [[ -n "$have" && "$have" != "${VERSION#v}" ]] \
   && warn "binary self-reports $have but the plugin pinned ${VERSION#v} — possible mispublished release tag"
 
-finalize
+finalize || exit 0

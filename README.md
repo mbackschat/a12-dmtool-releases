@@ -92,7 +92,7 @@ codex plugin add dmtool
 
 The Codex plugin lives under [`codex/`](codex/); the marketplace manifest at `.agents/plugins/marketplace.json` points Codex at it. Codex users can also drop the bundled [`codex/AGENTS.md`](codex/AGENTS.md) into their own repo's `AGENTS.md` to keep dmtool guidance always in context.
 
-Codex uses the **same on-demand installer**, so the *Activation* note above applies here too: the skill fetches the binary the first time you need it — no restart. The binary lands at `$PLUGIN_DATA/bin/dmtool` (Codex's data dir), and the agent invokes it by the path the installer prints.
+Start a **new Codex session after installation**; Codex loads a plugin's bundled skills when the next CLI session starts. The skill then uses the same on-demand installer. Skill-launched commands do not receive the hook-only `PLUGIN_DATA` variable, so the installer uses a version-aware sandbox-writable temporary cache on Codex and the agent invokes the exact path it prints. A failed cache write warns without printing the installer's ready marker.
 
 ## Install — raw binary (no agent)
 
@@ -206,6 +206,21 @@ Import is **best-effort** — it maps as much as possible (even unbounded arrays
 End-to-end walkthroughs of **every verb** — command + real captured output — live in [`examples/`](examples/) (full [index](examples/README.md)): discovering the tool, reading & **reviewing** a model (`model report` / `model diff`), the rule/computation edit loop, structure editing with the safe-delete gate, the atomic `apply` session, runtime evaluation, **JSON Schema ⇄ model** interop, custom field types & conditions, multi-file **workspaces**, and the version/compatibility surface.
 
 Want ideas for what to *ask*? [`SCENARIOS.md`](SCENARIOS.md) catalogues realistic **multi-step sessions** — ordered, plain-language asks you can hand to your agent verbatim: from-scratch authoring, evolving an existing model's rules, refactors, computations, and more.
+
+<!-- source-statistics:dmtool:start -->
+## Source statistics
+
+Generated with [Tokei](https://github.com/XAMPPRocky/tokei) from the production sources linked into the dmtool artifact. Tests, fixtures, generated output, build trees, and code embedded in Markdown are excluded.
+
+| Language | Files | Code | Comments | Blanks |
+|---|---:|---:|---:|---:|
+| Java | 453 | 43813 | 11987 | 6445 |
+| Kotlin | 106 | 17385 | 6324 | 2180 |
+| TypeScript | 0 | 0 | 0 | 0 |
+| Lean | 0 | 0 | 0 | 0 |
+
+Maintainers regenerate this table with the local statistics updater; release assembly checks the table it publishes.
+<!-- source-statistics:dmtool:end -->
 
 ## Changelog
 

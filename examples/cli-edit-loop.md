@@ -22,7 +22,7 @@ dmtool -m examples/models/subscription-computed.dm.json \
   "op" : "read",
   "outcome" : "read",
   "ok" : true,
-  "valid" : true,
+  "verification" : "KERNEL_CONFIRMED",
   "summary" : "1 referrer(s) of /Subscription/Billing/BaseFee",
   "data" : {
     "entity" : "/Subscription/Billing/BaseFee",
@@ -87,6 +87,7 @@ echo "--- Sum( occurrences in the file after --dry-run: $(grep -c "Sum(" /tmp/ed
   "op" : "modify",
   "outcome" : "preview",
   "ok" : true,
+  "verification" : "KERNEL_CONFIRMED",
   "summary" : "would re-express /Subscription/Billing/EffectiveFeeComp",
   "changed" : {
     "before" : "computes /Subscription/Billing/EffectiveFee\nalways => [/Subscription/Billing/BaseFee]",
@@ -116,6 +117,7 @@ echo "--- the written model still validates: $(dmtool -m /tmp/edit-sub.json mode
   "op" : "modify",
   "outcome" : "applied",
   "ok" : true,
+  "verification" : "KERNEL_CONFIRMED",
   "summary" : "re-expressed /Subscription/Billing/EffectiveFeeComp",
   "changed" : {
     "before" : "computes /Subscription/Billing/EffectiveFee\nalways => [/Subscription/Billing/BaseFee]",
@@ -199,7 +201,7 @@ cat > /tmp/edit-ops.json <<'EOF'
              "--condition", "[EffectiveFee] PatternViolated \"x\"", "--code", "Y"] }
 ]
 EOF
-dmtool batch /tmp/edit-ops.json | jq -c ".[] | {id, valid: .result.valid}"
+dmtool batch /tmp/edit-ops.json | jq -c ".data.results[] | {id, valid: .result.valid}"
 ```
 
 ```output
@@ -222,7 +224,7 @@ dmtool schema rule add | jq '.input.oneOf'
 {
   "id": "DateRange",
   "kind": "FUNCTION",
-  "meaning": "Constructs a date range from a start and an end date. Computation-only: it assigns a DATE_RANGE field in a computation operation; it has no condition form (the overlap predicates take date-range FIELDS, and a constructed range cannot be nested or compared). Both operands must be format-compatible date fields."
+  "meaning": "Constructs a DATE_RANGE value from start and end date entity references. It may be compared with == or != to a DATE_RANGE field in either direction or to another construction, or assigned to a DATE_RANGE field by a computation; ordering and nested use in overlap predicates are rejected."
 }
 [
   {
@@ -245,7 +247,7 @@ dmtool schema rule add | jq '.input.oneOf'
 ]
 ```
 
-→ `operators DateRange` carries the meaning and the use-site rule (computation-only); `schema rule add` returns the op's directional contract, with the input shape under `.input` — a `oneOf` of a rule-spec (`field`/`condition`/`code`) or a computation-spec (`computedField`/`alternatives`), both requiring `messages`. A cold agent learns the whole contract from the tool, no external docs.
+→ `operators DateRange` carries both legal use sites and the rejected nesting/ordering boundary; `schema rule add` returns the op's directional contract, with the input shape under `.input` — a `oneOf` of a rule-spec (`field`/`condition`/`code`) or a computation-spec (`computedField`/`alternatives`), both requiring `messages`. A cold agent learns the whole contract from the tool, no external docs.
 
 ## rule modify — re-express an existing rule (preview, then write)
 
@@ -267,6 +269,7 @@ echo "--- re-expression occurrences in the file after --dry-run: $(grep -c "Deli
   "op" : "modify",
   "outcome" : "preview",
   "ok" : true,
+  "verification" : "KERNEL_CONFIRMED",
   "summary" : "would re-express /Order/DeliveryNotBeforeOrder",
   "changed" : {
     "before" : "AllFieldsFilled(/Order/OrderDate, /Order/DeliveryDate) And DifferenceInDays(/Order/OrderDate, /Order/DeliveryDate) < 0",
@@ -296,6 +299,7 @@ echo "--- the written model still validates: $(dmtool -m /tmp/edit2-order.json m
   "op" : "modify",
   "outcome" : "applied",
   "ok" : true,
+  "verification" : "KERNEL_CONFIRMED",
   "summary" : "re-expressed /Order/DeliveryNotBeforeOrder",
   "changed" : {
     "before" : "AllFieldsFilled(/Order/OrderDate, /Order/DeliveryDate) And DifferenceInDays(/Order/OrderDate, /Order/DeliveryDate) < 0",
@@ -333,6 +337,7 @@ echo "--- the written model still validates: $(dmtool -m /tmp/edit2-rm-rule.json
   "op" : "remove",
   "outcome" : "applied",
   "ok" : true,
+  "verification" : "KERNEL_CONFIRMED",
   "summary" : "removed rule /Order/DeliveryNotBeforeOrder",
   "changed" : {
     "removed" : "/Order/DeliveryNotBeforeOrder"
@@ -376,6 +381,7 @@ echo "--- the written model checks: $(dmtool -m /tmp/edit2-sub.json model check 
   "op" : "add",
   "outcome" : "applied",
   "ok" : true,
+  "verification" : "KERNEL_CONFIRMED",
   "summary" : "added computation /Subscription/Billing/EffectiveFeeComp",
   "changed" : {
     "computation" : "/Subscription/Billing/EffectiveFeeComp"
@@ -403,7 +409,7 @@ dmtool -m /tmp/edit2-sub.json computation read /Subscription/Billing/EffectiveFe
   "op" : "read",
   "outcome" : "read",
   "ok" : true,
-  "valid" : true,
+  "verification" : "KERNEL_CONFIRMED",
   "summary" : "read /Subscription/Billing/EffectiveFeeComp",
   "data" : {
     "computation" : "/Subscription/Billing/EffectiveFeeComp",
@@ -448,6 +454,7 @@ echo "--- the written model still validates: $(dmtool -m /tmp/edit2-rm-comp.json
   "op" : "remove",
   "outcome" : "applied",
   "ok" : true,
+  "verification" : "KERNEL_CONFIRMED",
   "summary" : "removed computation /Subscription/Billing/EffectiveFeeComp",
   "changed" : {
     "removed" : "/Subscription/Billing/EffectiveFeeComp"
