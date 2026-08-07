@@ -3,7 +3,7 @@
 *2026-06-11T21:02:17Z by Showboat 0.6.1*
 <!-- showboat-id: 0cbe3a7c-75d1-448c-9808-fba2f6dba3e4 -->
 
-The companion to [`cli-tour.md`](cli-tour.md) (which reads & inspects): this demo **writes**. It walks the F8 modify-by-re-express loop and the write surface on the `subscription-computed` fixture (which already carries a computation `EffectiveFeeComp = [BaseFee]`) — `where-used` · `computation explain` · `computation modify` (`--dry-run` previews, then write) · `rule add` · `model describe -w/--workspace` (multi-file) · `batch`. Every command is `dmtool -m <model> <target> <op>`: the model is set once with `-m`, then a `<target> <op>` selects the operation. Commands run through `dmtool` from the repo root; re-check with `uvx showboat@0.6.1 verify examples/cli-edit-loop.md`.
+The companion to [`cli-tour.md`](cli-tour.md) (which reads & inspects): this demo **writes**. It walks the F8 modify-by-re-express loop and the write surface on the `subscription-computed` fixture (which already carries a computation `EffectiveFeeComp = [BaseFee]`) — `where-used` · `computation explain` · `computation modify` (`--dry-run` previews, then write) · `rule add` · `model describe -w/--workspace` (multi-file) · `batch`. Model-bound operations use `dmtool -m <model> <target> <op>`; catalog, artifact, and dispatcher operations in the tour use the syntax their manifest entries declare. Commands run through `dmtool` from the repo root; re-check with `uvx showboat@0.6.1 verify examples/cli-edit-loop.md`.
 
 **Migrated verbs write IN PLACE and return the result envelope** (`{target, op, outcome, ok, summary, changed, written, output, diagnostics}`): a mutation carries `.changed`; `--dry-run` previews read-only (writes nothing). So edits below operate on a `/tmp` copy, leaving the committed fixture untouched.
 
@@ -186,38 +186,45 @@ dmtool -m examples/models/multifile/app/storefront.dm.json \
 
 ## batch — many ops in one warm JVM
 
-`batch` runs a JSON array of verb invocations in a single process, amortizing the kernel's warm-up. Each op is `{id, verb, args}`, where `verb` is the **target** (`rule`) and the operation (`check`) leads `args` — the same target-first form a standalone call uses; each result is tagged by its `id`, so a producer can attribute every verdict.
+`batch` runs a JSON array of independent verb invocations in a single process. Each op is `{id, verb, args}`, where `verb` is the **target** (`field`) and the operation (`add`) leads `args` — the same target-first form a standalone call uses. Batch attempts every child and never rolls back earlier writes; use `apply` when edits must be atomic. This black-box example deliberately writes once and then rejects the duplicate:
 
 ```bash
+cp examples/models/subscription.dm.json /tmp/batch-contract.dm.json
+cat > /tmp/batch-field.json <<'EOF'
+{"group":"/Subscription/Billing","name":"BatchCommitted","kind":"STRING"}
+EOF
 cat > /tmp/edit-ops.json <<'EOF'
 [
-  { "id": "ok",  "verb": "rule",
-    "args": ["check", "-m", "examples/models/subscription-computed.dm.json",
-             "--field", "/Subscription/Billing/EffectiveFee",
-             "--condition", "[EffectiveFee] < [BaseFee]", "--code", "X"] },
-  { "id": "bad", "verb": "rule",
-    "args": ["check", "-m", "examples/models/subscription-computed.dm.json",
-             "--field", "/Subscription/Billing/EffectiveFee",
-             "--condition", "[EffectiveFee] PatternViolated \"x\"", "--code", "Y"] }
+  {"id":"write","verb":"field","args":["add","/tmp/batch-field.json"]},
+  {"id":"reject-duplicate","verb":"field","args":["add","/tmp/batch-field.json"]}
 ]
 EOF
-dmtool batch /tmp/edit-ops.json | jq -c ".data.results[] | {id, valid: .result.valid}"
+dmtool -m /tmp/batch-contract.dm.json batch /tmp/edit-ops.json | jq -c '{outcome,ok,dispatched:.data.dispatched,allSucceeded:.data.allSucceeded,results:[.data.results[] | {id,exit,written:.result.written}]}'
 ```
 
 ```output
-{"id":"ok","valid":true}
-{"id":"bad","valid":false}
+{"outcome":"completed","ok":false,"dispatched":true,"allSucceeded":false,"results":[{"id":"write","exit":0,"written":true},{"id":"reject-duplicate","exit":1,"written":false}]}
 ```
 
-→ Two `rule check`s in one JVM: the numeric comparison is `valid`, the pattern comparison on a number field is rejected — each verdict carries its `id`. This is how the eval runner re-validates many candidates at once.
+`completed` means every child was dispatched; `allSucceeded:false`, outer `ok:false`, and process exit 1 report the aggregate failure. The first child nevertheless remains persisted:
+
+```bash
+dmtool -m /tmp/batch-contract.dm.json field read /Subscription/Billing/BatchCommitted | jq -c '{outcome,field:.data.field}'
+```
+
+```output
+{"outcome":"read","field":"/Subscription/Billing/BatchCommitted"}
+```
+
+→ This is non-transactional partial persistence by design. Each result keeps its `id`, exact exit, and `written` state. Use `batch` for independent calls or explicitly acceptable partial writes; use `apply` for all-or-nothing model edits.
 
 ## The tool describes itself — operators & schema
 
-Two more self-description verbs round out the surface. `operators <id>` gives one DSL operator in full; `schema <target> <op>` gives that op's **directional contract** (`{op, input, returns, ...}`) — the rich rule/computation input schema (a `oneOf`) rides `.input`.
+Two more self-description verbs round out the surface. `operators <id>` gives one DSL operator in full; `schema <target> <op>` gives that op's **directional contract** (`{op, input, returns, ...}`) — the target-specific input schema rides `.input`.
 
 ```bash
 dmtool operators DateRange | jq '{id, kind, meaning}'
-dmtool schema rule add | jq '.input.oneOf'
+dmtool schema rule add | jq '.input | {title, required}'
 ```
 
 ```output
@@ -226,28 +233,18 @@ dmtool schema rule add | jq '.input.oneOf'
   "kind": "FUNCTION",
   "meaning": "Constructs a DATE_RANGE value from start and end date entity references. It may be compared with == or != to a DATE_RANGE field in either direction or to another construction, or assigned to a DATE_RANGE field by a computation; ordering and nested use in overlap predicates are rejected."
 }
-[
-  {
-    "title": "rule-spec",
-    "required": [
-      "field",
-      "condition",
-      "code",
-      "messages"
-    ]
-  },
-  {
-    "title": "computation-spec",
-    "required": [
-      "computedField",
-      "alternatives",
-      "messages"
-    ]
-  }
-]
+{
+  "title": "RuleAddSpec",
+  "required": [
+    "field",
+    "condition",
+    "code",
+    "messages"
+  ]
+}
 ```
 
-→ `operators DateRange` carries both legal use sites and the rejected nesting/ordering boundary; `schema rule add` returns the op's directional contract, with the input shape under `.input` — a `oneOf` of a rule-spec (`field`/`condition`/`code`) or a computation-spec (`computedField`/`alternatives`), both requiring `messages`. A cold agent learns the whole contract from the tool, no external docs.
+→ `operators DateRange` carries both legal use sites and the rejected nesting/ordering boundary; `schema rule add` returns the op's directional contract, with the strict rule-spec shape under `.input`. `schema computation add` likewise returns only the computation-spec keys, so a cold agent learns the exact contract from the tool without a permissive mixed-target schema.
 
 ## rule modify — re-express an existing rule (preview, then write)
 
@@ -413,6 +410,7 @@ dmtool -m /tmp/edit2-sub.json computation read /Subscription/Billing/EffectiveFe
   "summary" : "read /Subscription/Billing/EffectiveFeeComp",
   "data" : {
     "computation" : "/Subscription/Billing/EffectiveFeeComp",
+    "errorCodesToSuppress" : [ ],
     "converted" : true,
     "calculatedField" : "/Subscription/Billing/EffectiveFee",
     "alternatives" : [ {
@@ -431,7 +429,7 @@ dmtool -m /tmp/edit2-sub.json computation read /Subscription/Billing/EffectiveFe
 }
 ```
 
-→ `outcome: "read"`, `ok: true`, and `.data` carries `converted: true` (the kernel construct round-tripped into rulekit's typed form cleanly) plus `calculatedField` — the `/Subscription/Billing/EffectiveFee` this computation assigns. `read` writes nothing (`written: false`); it's the verification half of the add we just made.
+→ `outcome: "read"`, `ok: true`, and `.data` carries `converted: true` (the kernel construct round-tripped into rulekit's typed form cleanly), `calculatedField` — the `/Subscription/Billing/EffectiveFee` this computation assigns — and the exact A12 `errorCodesToSuppress` list (empty here). `read` writes nothing (`written: false`); it's the verification half of the add we just made.
 
 ## computation remove — drop a computation
 

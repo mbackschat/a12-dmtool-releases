@@ -1,12 +1,19 @@
 # dmtool — release distribution + agent plugins (Claude Code, Codex)
 
-**`dmtool`** is an agent-friendly, **self-describing** CLI for authoring, validating, and safely editing **A12 Kernel document models** — validation rules, computations, and structure — one native binary, **JSON in / JSON out**. Every edit is confirmed by the embedded **real A12 kernel** before it is written, and runtime evaluation (which rules fire on a real document) runs on a clean-room, kernel-exact **interpreter**. Point your coding agent at it: the tool describes itself (`manifest` / `operators` / `schema`), and the bundled skill teaches the judgment calls.
+**`dmtool`** is an agent-friendly, **self-describing** CLI for authoring, validating, and safely editing **A12 Kernel document models** — validation rules, computations, and structure — one native binary, machine-readable by default with explicitly profiled JSON/text artifacts. Every edit is confirmed by the embedded **real A12 kernel** before it is written, and runtime evaluation (which rules fire on a real document) runs on a clean-room, kernel-exact **interpreter**. Point your coding agent at it: the tool describes itself (`manifest` / `operators` / `schema`), and the bundled skill teaches the judgment calls.
 
-This repository is the **public distribution** — release-only (binaries + the plugins are pushed here from a separate source repo); it is not where the tool is developed.
+This repository is the **public distribution** — release-only (binaries + the plugins are pushed here from the main [`a12-dmkits` project](https://github.com/mbackschat/a12-dmkits)); it is not where the tool is developed.
 
 > **Not an official A12 / mgm artifact.** `dmtool` is an independent tool built against the public A12 Kernel.
 
 This release targets **A12 Kernel 30.8.1** (A12 Tools distribution **2025.06-ext5**) — reported by `dmtool --version` and `dmtool manifest`, and recorded per entry in the [`CHANGELOG`](CHANGELOG.md).
+
+## Documentation
+
+- 🛠️ **[Explore the main `a12-dmkits` project →](https://github.com/mbackschat/a12-dmkits)** — source, design, API guides, and complete test evidence
+- 🧭 **[Follow the executable dmtool examples →](examples/README.md)** — discovery, editing, evaluation, workspaces, and JSON Schema/OpenAPI
+- 🚀 **[Try the interpreter’s live browser showcase →](https://mbackschat.github.io/a12-interpreter-releases/showcase/)** — the same kernel-free runtime evaluator used by dmtool
+- 📋 **[Read the release changelog →](CHANGELOG.md)**
 
 <!-- shared:dmtool-story — MIRRORED from the top-level README.md; do NOT edit here. Edit the canonical block there, then re-copy (SharedReadmeRegionTest enforces parity). -->
 ## Why `dmtool`
@@ -19,13 +26,13 @@ AllFieldsFilled(OrderDate, DeliveryDate) And DifferenceInDays(OrderDate, Deliver
 
 Writing these by hand is fragile: a mistyped path, a wrong operator or decimal scale, or — most insidious — **inverted polarity** (the condition true on the *requirement* instead of the *violation*) slips through until the kernel runs, if it's caught at all.
 
-**`dmtool` closes that gap from the command line** — one self-describing native binary, **JSON in / JSON out**, no Java toolchain. It authors, reads, and safely edits a model's rules *and* structure — **every edit is confirmed by the embedded real A12 kernel before it is written**, so *valid* means the engine accepts it, not that it merely looks right — and it runs rules against real documents on a **clean-room interpreter** held kernel-exact by a differential test estate and a tri-verified conformance corpus.
+**`dmtool` closes that gap from the command line** — one self-describing native binary, machine-readable by default with explicitly profiled JSON/text artifacts, no Java toolchain. It authors, reads, and safely edits a model's rules *and* structure — **every edit is confirmed by the embedded real A12 kernel before it is written**, so *valid* means the engine accepts it, not that it merely looks right — and it runs rules against real documents on a **clean-room interpreter** held kernel-exact by a differential test estate and a tri-verified conformance corpus.
 
 It is built **agent-first** — the #1 use is inside a coding-agent session (Claude Code, Codex):
 
 - **Self-describing — a cold agent needs no external docs.** `manifest` lists every verb × parameter with a worked example; `operators` / `patterns` / `diagnostics` / `schema` expose the DSL vocabulary, the validation idioms, each diagnostic code, and the exact I/O shape — all from the binary itself.
 - **Judgment where `--help` can't reach.** A bundled skill teaches what the catalog can't — condition *polarity*, error-field paths, iteration scope — so a scaffolded rule has the right shape before the kernel ever sees it.
-- **Safe by construction.** Every result rides one uniform envelope; deletes and structural refactors are **gated** (a referenced field won't silently vanish); a multi-op `apply` session is **atomic** (rollback on any failure).
+- **Safe by construction.** Envelope-producing operations share one standard result shape, while raw artifact/catalog and text-view modes are explicit in the operational profile; deletes and structural refactors are **gated** (a referenced field won't silently vanish); a multi-op `apply` session is **atomic** (rollback on any failure).
 
 ### A session, in natural language
 
@@ -58,6 +65,21 @@ Two pieces make an agent this good with `dmtool`:
 
 - **The plugin** delivers the binary — a bundled installer the skill runs **on demand** (the first time `dmtool` is needed, in that same session) fetches the right per-OS native build (anonymous, checksum-verified). One install line (below); the same plugin model serves Claude Code and Codex.
 - **The skill** is a small `SKILL.md` of *judgment* — the traps `--help` can't teach: rule **polarity**, valid **error fields**, **iteration** scope, the date/number gotchas. The binary stays self-describing (`manifest` / `operators` / `schema`); the skill teaches *when* and *why*, and the same canonical skill backs both agents.
+
+### 🔌 The same tool over MCP — for a host that cannot run a binary
+
+Some callers can't spawn a subprocess at all: a web client, a hosted agent platform, a sandboxed IDE integration. For those, **the same binary is a Model Context Protocol server** (revision `2026-07-28`) — two transports, one implementation:
+
+```sh
+dmtool mcp                                       # stdin/stdout, for a host that launches the binary
+dmtool mcp --http --host 0.0.0.0 --port 8080     # a bound port — upload it, start it, hand out the URL
+```
+
+The whole verb surface arrives as tools, **derived from the same command tree the CLI describes itself from** — so the two surfaces can never describe the tool differently, and a verb added to the CLI appears here by itself. Each tool carries the facts a host can act on: a read tool is annotated read-only, so allowlisting `dm.rule.read` cannot reach `rule remove` — a guarantee granting shell access can never give you.
+
+**Every call carries its own content.** Send the model's DM-JSON, get the edited DM-JSON back. The server accepts **no filesystem path**, holds no model between calls, and deletes everything a call creates before it answers — so two callers cannot reach each other's work, by construction rather than by policy.
+
+> **Where you *can* run the binary, run it.** The CLI edits models in place; over MCP you pay a content round trip in each direction. MCP is the answer to "my host cannot execute anything", not a local convenience — and the verb's own `--help` says so.
 <!-- /shared:dmtool-story -->
 
 **A second bundled skill — `/a12-dmtool-bug-report`.** When something breaks, ask your agent to file a bug report. It isolates a **minimal reproduction**, tells a genuine **tool defect** apart from a rejected input (an internal error surfaces as a structured `error` envelope with `RK_INTERNAL_ERROR`, exit 70 — never a raw stack trace), captures the friction it hit, and writes a crisp report to **a folder you choose** — ready to attach to an issue or send however you like. Good reports help us fix the tool fast; it's the same report rigor we use to probe `dmtool` ourselves.
@@ -109,6 +131,34 @@ mv dmtool-macos-arm64 dmtool && chmod +x dmtool   # or dmtool-linux-x64 / dmtool
 The CLI is **self-describing** — `dmtool --help`, `dmtool manifest`, `dmtool operators`, `dmtool schema <target> <op>`.
 
 > The native binary covers rule **authoring / checking / structure / read** **and runtime evaluation** — `model eval`, `rule eval`, `model compute`, `model seed` run on the native-safe interpreter (kernel-free), the sole runtime eval engine on every target.
+
+## Install — as an MCP server (for a host that can't run a binary)
+
+The same executable speaks the **Model Context Protocol**, revision `2026-07-28`, on stdin/stdout. Install the binary as above, then register it with your host. For a host that reads a project `.mcp.json`:
+
+```json
+{ "mcpServers": { "dmtool": { "command": "dmtool", "args": ["mcp"] } } }
+```
+
+**Or run it as a network service.** For callers that reach the tool over HTTP rather than launching it, the same binary binds a port — upload it to a host, start it, and hand out the URL:
+
+```sh
+dmtool mcp --http --host 0.0.0.0 --port 8080     # clients POST to https://your-host/mcp
+```
+
+It binds loopback until told otherwise, allows no browser `Origin` unless you list one, and caps the request body. Several callers are served at once by a bounded pool (`--workers`, `--queue-depth`); past it a caller gets an immediate `503` with `Retry-After` rather than waiting behind a queue. Raise `--workers` only with the memory to match — authoring is flat at tens of MiB, but evaluating a large document has been measured in the hundreds. Put it behind your platform's TLS and authentication: the server stores nothing, so there is no data to reach, but an open endpoint is open CPU.
+
+Nothing else is needed — no plugin, no skill, no configuration file of ours. To see the stdio form answer, drive it by hand (one newline-delimited JSON-RPC message per line):
+
+```sh
+printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"server/discover","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}' | dmtool mcp
+```
+
+What arrives is the whole verb surface as tools, **derived from the same command tree the CLI describes itself from**. Two things follow that a wrapper could not give you: a read tool is annotated read-only, so allowlisting `dm.rule.read` cannot reach `rule remove`; and every call **carries its own content** — send the model's DM-JSON, receive the edited DM-JSON back, with no path accepted and nothing kept between calls.
+
+A worked session is in [`examples/cli-mcp.md`](examples/cli-mcp.md).
+
+> **If you can run the binary, run it.** The CLI edits models in place; over MCP you pay a content round trip each way. This surface exists for the host that cannot execute anything.
 
 ## What you can do — a quick tour
 
@@ -162,7 +212,7 @@ dmtool -m order.dm.json rule add rule.json
 
 **The key idea — polarity:** a condition is **true on the *violation*, not the requirement.** To enforce *"delivery must not be before the order date,"* you write the case to **reject** — `DifferenceInDays(OrderDate, DeliveryDate) < 0` is true exactly when delivery *is* before order (the `AllFieldsFilled(…)` guard skips the check until both dates are present). Writing the requirement directly would flag every *valid* document — the inverted-polarity trap the bundled skill helps you avoid.
 
-Every result is a uniform JSON envelope (`{ok, valid, outcome, changed, diagnostics[], …}`) with structured, fix-oriented diagnostics.
+Envelope-producing invocations use the standard JSON result envelope (`{ok, valid, outcome, changed, diagnostics[], …}`) with structured, fix-oriented diagnostics; raw artifact/catalog and text-view modes are declared by their operational profiles.
 
 ### Review an edit semantically
 
@@ -214,8 +264,8 @@ Generated with [Tokei](https://github.com/XAMPPRocky/tokei) from the production 
 
 | Language | Files | Code | Comments | Blanks |
 |---|---:|---:|---:|---:|
-| Java | 453 | 43813 | 11987 | 6445 |
-| Kotlin | 106 | 17385 | 6324 | 2180 |
+| Java | 470 | 46797 | 12830 | 6854 |
+| Kotlin | 110 | 17618 | 6553 | 2232 |
 | TypeScript | 0 | 0 | 0 | 0 |
 
 Maintainers regenerate this table with the local statistics updater; both release publishers compare it with fresh counts before any public mutation.
