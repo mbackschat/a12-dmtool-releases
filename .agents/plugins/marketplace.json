@@ -1,0 +1,22 @@
+{
+  "name": "dmtool",
+  "interface": {
+    "displayName": "dmtool — A12 document-model authoring"
+  },
+  "plugins": [
+    {
+      "name": "dmtool",
+      "source": {
+        "source": "git-subdir",
+        "url": "https://github.com/mbackschat/a12-dmtool-releases.git",
+        "path": "./codex",
+        "ref": "main"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

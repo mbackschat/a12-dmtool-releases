@@ -1,0 +1,11 @@
+{
+  "name": "dmtool",
+  "owner": { "name": "Martin Backschat", "url": "https://github.com/mbackschat" },
+  "plugins": [
+    {
+      "name": "dmtool",
+      "source": ".",
+      "description": "Author, validate, and safely edit A12 Kernel document models — rules, computed fields, and structure (fields, groups, type-defs, includes) — with the dmtool CLI (native binary + authoring skill)."
+    }
+  ]
+}
