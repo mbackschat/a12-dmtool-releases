@@ -9,7 +9,7 @@ The previous tours operated on the **model** — its rules and computations as t
 
 ## The document instance
 
-A model is a *schema*; the runtime needs *data*. The instance below is the smallest order that exercises the date rule — just the two dates the rule turns on, nested under their `Order` group. Dates are written **ISO `yyyy-MM-dd`** (the model is `en_US`-only; that is the format the engine parses). Here the delivery (`2024-05-15`) lands **before** the order (`2024-06-01`) — the violation the stored rule `/Order/DeliveryNotBeforeOrder` is meant to catch.
+A model is a *schema*; the runtime needs *data*. The instance below is the smallest order that exercises the date rule — just the two dates the rule turns on, nested under their `Order` group. Dates are written **ISO `yyyy-MM-dd`** (the model is `en_US`-only; that is the format the engine parses). Here the delivery (`2024-05-15`) lands **before** the order (`2024-06-01`) — the violation the stored rule `/Order/DeliveryNotBeforeOrder` is meant to catch. The shared reader discards unknown keys and wrong-shaped entities, then numbers surviving object rows consecutively; an empty `{}` remains a row. [The input contract](../docs/INTERPRETER-API-SPEC.md#43-conversion-and-fatal-input-errors) distinguishes conversion from fatal errors.
 
 ```bash
 cat > /tmp/rt-order-violation.json <<'JSON'
@@ -63,8 +63,8 @@ dmtool -m examples/models/order-ruled.dm.json \
   "outcome" : "read",
   "ok" : true,
   "engine" : "DM_INTERPRETER",
-  "engineVersion" : "0.13.0",
-  "toolVersion" : "0.13.0",
+  "engineVersion" : "0.14.0",
+  "toolVersion" : "0.14.0",
   "summary" : "1 rule(s) fired",
   "data" : {
     "fired" : [ "DELIVERY_BEFORE_ORDER" ],
@@ -115,8 +115,8 @@ dmtool -m examples/models/order-ruled.dm.json \
   "outcome" : "read",
   "ok" : true,
   "engine" : "DM_INTERPRETER",
-  "engineVersion" : "0.13.0",
-  "toolVersion" : "0.13.0",
+  "engineVersion" : "0.14.0",
+  "toolVersion" : "0.14.0",
   "summary" : "0 rule(s) fired",
   "data" : {
     "fired" : [ ],
@@ -140,7 +140,7 @@ dmtool -m examples/models/order-ruled.dm.json \
 
 ## model eval — partial validation for one page
 
-`--relevant` exposes the form engine's partial/wizard-page validation. The JSON array names the field or group instances currently relevant; `[*]` (or `[0]`) means every repetition and `[n]` selects one row; an **omitted** index on a repeatable segment is refused rather than guessed, because that spelling means repetition 1 in A12 and reading it as "all" would silently widen the check. A rule runs only when its error field is relevant, and an omitted operand is UNKNOWN. (A rule over a *whole-repetition* aggregate or value-list is fully known only when that repeatable level is wildcarded — `[*]` or a covering group — not when its rows are listed individually.) Selecting only `DeliveryDate` therefore suppresses the date comparison because `OrderDate` is not on this page:
+`--relevant` exposes the form engine's partial/wizard-page validation. The JSON array names the field or group instances currently relevant; `[*]` (or `[0]`) means every repetition and `[n]` selects one row; an **omitted** index on a repeatable segment is refused rather than guessed, because that spelling means repetition 1 in A12 and reading it as "all" would silently widen the check. A rule runs only when its error field is relevant, and an omitted operand is UNKNOWN. (Starred value-list extent also accepts concrete selectors covering every declared slot: rows 1 and 2 suffice at capacity 2, but not capacity 3. Aggregate gates remain distinct; [starred group predicates](../docs/API-GUIDE.md#group-quantifiers) also require missing-position coverage to establish absence.) Selecting only `DeliveryDate` therefore suppresses the date comparison because `OrderDate` is not on this page:
 
 ```bash
 dmtool -m examples/models/order-ruled.dm.json \
@@ -193,8 +193,8 @@ dmtool -m examples/models/order-ruled.dm.json \
   "outcome" : "read",
   "ok" : true,
   "engine" : "DM_INTERPRETER",
-  "engineVersion" : "0.13.0",
-  "toolVersion" : "0.13.0",
+  "engineVersion" : "0.14.0",
+  "toolVersion" : "0.14.0",
   "summary" : "/Order/DeliveryNotBeforeOrder FIRED on this instance (a violation)",
   "data" : {
     "rule" : "/Order/DeliveryNotBeforeOrder",
@@ -230,8 +230,8 @@ dmtool -m examples/models/order-ruled.dm.json \
   "outcome" : "read",
   "ok" : true,
   "engine" : "DM_INTERPRETER",
-  "engineVersion" : "0.13.0",
-  "toolVersion" : "0.13.0",
+  "engineVersion" : "0.14.0",
+  "toolVersion" : "0.14.0",
   "summary" : "/Order/DeliveryNotBeforeOrder was NOT evaluated — a referenced field is formally invalid",
   "data" : {
     "rule" : "/Order/DeliveryNotBeforeOrder",
@@ -272,8 +272,8 @@ dmtool -m examples/models/order-ruled.dm.json \
   "outcome" : "read",
   "ok" : true,
   "engine" : "DM_INTERPRETER",
-  "engineVersion" : "0.13.0",
-  "toolVersion" : "0.13.0",
+  "engineVersion" : "0.14.0",
+  "toolVersion" : "0.14.0",
   "summary" : "1 rule(s) fired",
   "data" : {
     "fired" : [ "QTY_CAP" ],
@@ -321,7 +321,8 @@ dmtool schema model compute \
   "dataKeys": [
     "computed",
     "declarations",
-    "instances"
+    "instances",
+    "unsupported"
   ]
 }
 ```
@@ -343,8 +344,8 @@ dmtool -m examples/models/subscription-computed.dm.json \
   "outcome" : "read",
   "ok" : true,
   "engine" : "DM_INTERPRETER",
-  "engineVersion" : "0.13.0",
-  "toolVersion" : "0.13.0",
+  "engineVersion" : "0.14.0",
+  "toolVersion" : "0.14.0",
   "summary" : "computed 1 computation(s) over 1 field instance(s)",
   "data" : {
     "computed" : [ {
@@ -380,8 +381,8 @@ dmtool -m examples/models/subscription-computed.dm.json \
   "outcome" : "read",
   "ok" : true,
   "engine" : "DM_INTERPRETER",
-  "engineVersion" : "0.13.0",
-  "toolVersion" : "0.13.0",
+  "engineVersion" : "0.14.0",
+  "toolVersion" : "0.14.0",
   "summary" : "computed 1 computation(s) over 1 field instance(s)",
   "data" : {
     "computed" : [ {
@@ -475,3 +476,148 @@ dmtool -m examples/models/subscription-computed.dm.json \
 ```
 
 → with `--no-computations` the stored `EffectiveFee` is empty (an empty number reads as `0`), so `0 > 0` is false and nothing fired. Same instance, same rule — the only difference is whether computations ran first. **Use the default to validate as the app will; `--no-computations` to validate stored values as-is.**
+
+For partial parallel joins, combining error-field selectors can admit a rule without making unselected operands relevant. Ordinary outer/frame coordinates and joined coordinates have different dispatch roles; see the [partial-validation contract](../docs/CLI-SPEC.md) and [kernel controls](../docs/KERNEL-FINDINGS.md#kf544). A concrete error address can survive an unavailable duplicate index value. The interpreter uses its [first-admitted message association](../docs/INTERPRETER-FINDINGS.md#if376), while generated uniqueness errors keep both physical rows.
+
+## Parallel joins can emit the same message twice
+
+The [tariff model](models/tariff-parallel.dm.json) joins offered and quoted premiums by numeric deductible. Its index declarations require zero and two minimum fractional digits respectively. Validation visits both rendered tokens, `5` and `5.00`, although each resolves to the same matched rows. `messages` retains both occurrences; `fired` lists the code once. Changing both values to `5.25` aligns the tokens and produces one occurrence.
+
+```bash
+cat > /tmp/rt-tariff.json <<'JSON'
+{"Tariff":{"Offered":[{"Deductible":5,"Premium":"p"}],"Quoted":[{"Deductible":5,"Premium":"p"}]}}
+JSON
+dmtool -m examples/models/tariff-parallel.dm.json model eval --instance /tmp/rt-tariff.json \
+  | jq '{fired: .data.fired, occurrences: (.data.messages | length)}'
+sed 's/:5,/:5.25,/g' /tmp/rt-tariff.json > /tmp/rt-tariff-fractional.json
+dmtool -m examples/models/tariff-parallel.dm.json model eval --instance /tmp/rt-tariff-fractional.json \
+  | jq '{fired: .data.fired, occurrences: (.data.messages | length)}'
+```
+
+```output
+{
+  "fired": [
+    "JOIN"
+  ],
+  "occurrences": 2
+}
+{
+  "fired": [
+    "JOIN"
+  ],
+  "occurrences": 1
+}
+```
+
+## A missing nested prefix still affects message type
+
+The [claim model](models/claim-first-payout.dm.json) compares the first filled payout amount with `7`. Both documents below select that value. An earlier payout without any parts leaves an empty prefix, so the firing is OMISSION; moving the empty payout after the selected value preserves VALUE.
+
+```bash
+cat > /tmp/rt-claim-prefix.json <<'JSON'
+{"Claim":{"Ref":"C","Payouts":[{},{"Parts":[{"Amount":7}]}]}}
+JSON
+cat > /tmp/rt-claim-suffix.json <<'JSON'
+{"Claim":{"Ref":"C","Payouts":[{"Parts":[{"Amount":7}]},{}]}}
+JSON
+for position in prefix suffix; do
+  dmtool -m examples/models/claim-first-payout.dm.json model eval --instance "/tmp/rt-claim-$position.json" \
+    | jq '{fired: .data.fired, types: [.data.messages[].type]}'
+done
+```
+
+```output
+{
+  "fired": [
+    "FIRST"
+  ],
+  "types": [
+    "OMISSION_ERROR"
+  ]
+}
+{
+  "fired": [
+    "FIRST"
+  ],
+  "types": [
+    "VALUE_ERROR"
+  ]
+}
+```
+
+## Excess descendants do not invalidate ancestor counts
+
+The [shipment model](models/shipment-ancestor-errors.dm.json) counts manifests. A malformed Quantity in an excess Item reports structural errors while the manifest count remains available. The same malformed value inside capacity suppresses that partial count.
+
+```bash
+cat > /tmp/rt-shipment-excess.json <<'JSON'
+{ "Shipment": { "Title": "shipment", "Manifests": [
+  { "Label": "first", "Crates": [{ "Tag": "crate", "Items": [{"Quantity":1}, {}, {"Quantity":"bad"}] }] },
+  { "Label": "second" }
+] } }
+JSON
+cat > /tmp/rt-shipment-invalid.json <<'JSON'
+{ "Shipment": { "Title": "shipment", "Manifests": [
+  { "Label": "first", "Crates": [{ "Tag": "crate", "Items": [{"Quantity":"bad"}] }] },
+  { "Label": "second" }
+] } }
+JSON
+for placement in excess invalid; do
+  dmtool -m examples/models/shipment-ancestor-errors.dm.json model eval \
+    --instance "/tmp/rt-shipment-$placement.json" --no-computations --relevant '["/Shipment"]' \
+    | jq '{rootCountAvailable: (.data.fired | index("ROOT2") != null),
+           structuralErrors: ([.data.messages[] | select(.code | startswith("zuGrosse"))] | length)}'
+done
+```
+
+```output
+{
+  "rootCountAvailable": true,
+  "structuralErrors": 2
+}
+{
+  "rootCountAvailable": false,
+  "structuralErrors": 0
+}
+```
+
+A nonempty partial selection still reports structural errors elsewhere in the document. A null Quantity is a present field occurrence, so it reports alongside its excess Item row even when only Title is selected.
+
+```bash
+cat > /tmp/rt-shipment-empty-excess.json <<'JSON'
+{ "Shipment": { "Title": "shipment", "Manifests": [
+  { "Crates": [{ "Items": [{}, {}, {"Quantity":null}] }] }
+] } }
+JSON
+dmtool -m examples/models/shipment-ancestor-errors.dm.json model eval \
+  --instance /tmp/rt-shipment-empty-excess.json --no-computations --relevant '["/Shipment/Title"]' \
+  | jq '[.data.messages[] | select(.code | startswith("zuGrosse")) | .code] | sort'
+```
+
+```output
+[
+  "zuGrosseKontextnummer",
+  "zuGrosseZeile"
+]
+```
+
+## Today and Now read one instant, in the model's zone
+
+`Today` and `Now` read the current instant by default, as A12 does. `--clock <instant>` pins it on `model eval`, `rule eval` and `model compute`, so a run that depends on the date is reproducible. The instant carries its own offset, and the model's `timeZone` decides which day it is: the two instants below are an hour apart on one UTC day, but on either side of midnight in Berlin, the order model's zone.
+
+```bash
+cat > /tmp/rt-order-oct14.json <<'JSON'
+{ "Order": { "OrderDate": "2026-10-14" } }
+JSON
+for instant in 2026-10-13T21:30:00Z 2026-10-13T22:30:00Z; do
+  dmtool -m examples/models/order-ruled.dm.json model eval \
+    --instance /tmp/rt-order-oct14.json --condition "[/Order/OrderDate] > Today" \
+    --field /Order/OrderDate --code ORDER_AHEAD --clock "$instant" \
+    | jq -c --arg at "$instant" '{at: $at, orderAhead: .data.rule.fired}'
+done
+```
+
+```output
+{"at":"2026-10-13T21:30:00Z","orderAhead":true}
+{"at":"2026-10-13T22:30:00Z","orderAhead":false}
+```

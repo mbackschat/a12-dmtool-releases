@@ -7,14 +7,15 @@ The **apply** verb is dmtool's *session* surface — the companion to the single
 
 ## Discover the frame — `schema apply`
 
-A cold agent learns the op-record frame **from the tool**. `schema apply` returns apply's directional **input** contract: an *array* of op-records, each requiring `target` + `op` (`additionalProperties: true` — the per-op keys are that verb's params, discovered from `manifest` + `schema <target> <op>`), plus a **worked example**. We project the frame and the example with `jq`.
+A cold agent learns the op-record frame **from the tool**. `schema apply` returns apply's directional contract in the same shape every verb's takes: the op-record frame under **`input`** — an *array* of op-records, each requiring `target` + `op` (`additionalProperties: true` — the per-op keys are that verb's params, discovered from `manifest` + `schema <target> <op>`) — plus a **worked example**. We project the frame and the example with `jq`.
 
 ```bash
-dmtool schema apply | jq "{title, type, item_required: .items.required, example: .examples[0]}"
+dmtool schema apply | jq "{op, title: .input.title, type: .input.type, item_required: .input.items.required, example: .input.examples[0]}"
 ```
 
 ```output
 {
+  "op": "apply",
   "title": "ApplyOps",
   "type": "array",
   "item_required": [
@@ -303,7 +304,7 @@ dmtool -m /tmp/apply-typo.dm.json apply /tmp/apply-typo-ops.json 2>&1; echo "(ex
 (exit 1)
 ```
 
-→ `failedAt: 0`, `outcome: "rejected"`, `written: false`. `RK_UNKNOWN_ARG` points `where.arg` at the offending key (`grop`) and the `fix` is the correction (`did you mean 'group'?`). A **bad op** is the sibling case — `RK_UNKNOWN_OP` lists the supported ops:
+→ `failedAt: 0`, `outcome: "rejected"`, `written: false`. `RK_UNKNOWN_ARG` points `where.arg` at the offending key (`grop`) and the `fix` is the correction (`did you mean 'group'?`). A **bad op** is the sibling case — `RK_UNKNOWN_OP` lists the supported `(target op)` pairs:
 
 ```bash
 printf "%s" '[ {"target":"field","op":"bogus","group":"/Order","name":"X","kind":"NUMBER"} ]' > /tmp/apply-badop-ops.json
@@ -316,12 +317,12 @@ echo "(exit ${PIPESTATUS[0]})"
 {
   "code": "RK_UNKNOWN_OP",
   "summary": "apply does not support op 'field bogus'",
-  "fix": "supported ops: computation add, computat…"
+  "fix": "supported (target op) pairs: computation…"
 }
 (exit 1)
 ```
 
-→ `RK_UNKNOWN_OP` rejects `field bogus` and the `fix` enumerates the supported `target op` pairs — so the agent discovers the valid set from the diagnostic itself. (We truncate the long `fix` for the demo.)
+→ `RK_UNKNOWN_OP` rejects `field bogus` and the `fix` enumerates the supported **`(target op)` pairs** — so the agent discovers the valid set from the diagnostic itself. (We truncate the long `fix` for the demo.) The wording earns its parenthesis: an op-record spells its op as **two keys**, while the list is space-joined, so a `fix` that just said "supported ops: … rule add …" read as a value for `op` — and an agent that had written `{"op": "rule add"}` was handed back the very spelling it was refused for (measured 2026-09-04). Pass only `op` and the corrective now splits the label for you.
 
 ## Cross-type corrective — a batch op fed to apply
 

@@ -34,6 +34,13 @@ It is built **agent-first** — the #1 use is inside a coding-agent session (Cla
 - **Judgment where `--help` can't reach.** A bundled skill teaches what the catalog can't — condition *polarity*, error-field paths, iteration scope — so a scaffolded rule has the right shape before the kernel ever sees it.
 - **Safe by construction.** Envelope-producing operations share one standard result shape, while raw artifact/catalog and text-view modes are explicit in the operational profile; deletes and structural refactors are **gated** (a referenced field won't silently vanish); a multi-op `apply` session is **atomic** (rollback on any failure).
 
+<p align="center">
+  <a href="assets/infographics/dmtool-model-workbench.avif">
+    <img src="assets/infographics/dmtool-model-workbench.avif" alt="dmtool DocumentModel workbench for discovery, schema exchange, understanding, authoring, review, and runtime automation" width="720">
+  </a>
+</p>
+<p align="center"><sub>Click the infographic to open the full-resolution image.</sub></p>
+
 ### A session, in natural language
 
 You don't type `dmtool` — your agent does. You state the rule in plain language; the agent resolves the model, reasons about **polarity** and **operator semantics**, and the **real kernel** confirms the authored rule before anything is written:
@@ -83,6 +90,17 @@ The whole verb surface arrives as tools, **derived from the same command tree th
 <!-- /shared:dmtool-story -->
 
 **A second bundled skill — `/a12-dmtool-bug-report`.** When something breaks, ask your agent to file a bug report. It isolates a **minimal reproduction**, tells a genuine **tool defect** apart from a rejected input (an internal error surfaces as a structured `error` envelope with `RK_INTERNAL_ERROR`, exit 70 — never a raw stack trace), captures the friction it hit, and writes a crisp report to **a folder you choose** — ready to attach to an issue or send however you like. Good reports help us fix the tool fast; it's the same report rigor we use to probe `dmtool` ourselves.
+
+## How the technology fits
+
+Kotlin Multiplatform supplies dmtool's portable runtime-evaluation engine. GraalVM compiles the JVM application stack into the self-contained per-OS executable. The embedded real A12 Kernel remains responsible for model acceptance, canonical read-back, and safe rewrites, while differential tests use the Kernel as the Interpreter's semantics oracle.
+
+<p align="center">
+  <a href="assets/infographics/kotlin-graalvm-kernel-roles.avif">
+    <img src="assets/infographics/kotlin-graalvm-kernel-roles.avif" alt="How Kotlin Multiplatform, GraalVM Native Image, and the A12 Kernel divide responsibilities inside dmtool" width="720">
+  </a>
+</p>
+<p align="center"><sub>Click the infographic to open the full-resolution image.</sub></p>
 
 ## Install — Claude Code
 
@@ -218,6 +236,13 @@ Envelope-producing invocations use the standard JSON result envelope (`{ok, vali
 
 `model diff` is a structural semantic diff: it independently binds both models, ignores formatting noise, and reports typed field, group, rule, computation, typedef, authored include/import, and model-configuration changes with per-aspect deltas, review-impact tiers, and reason codes. Multi-model two-file diffs resolve each side from `-w` or its own folder; `--since` resolves the base model and dependencies at the Git ref. Delta JSON preserves deterministic `before`/`after` strings and adds tagged `beforeValue`/`afterValue` scalars or string lists for typed consumers.
 
+<p align="center">
+  <a href="assets/infographics/semantic-model-diff.avif">
+    <img src="assets/infographics/semantic-model-diff.avif" alt="How dmtool compares two model snapshots structurally, classifies semantic changes, and ranks review impact" width="720">
+  </a>
+</p>
+<p align="center"><sub>Click the infographic to open the full-resolution image.</sub></p>
+
 When base and head contain different revisions of the same referenced model id, pass repeatable `--base-workspace` and `--head-workspace` roots; shared `-w` is for a common dependency snapshot.
 
 ```sh
@@ -231,6 +256,13 @@ A field diff covers complete typed config, requiredness, enum values, metadata, 
 ### From a JSON Schema or OpenAPI document
 
 Originate a model from an existing **JSON Schema** or **OpenAPI** spec (3.0 / 3.1 / 3.2), and export one back out — the same two verbs handle both, because OpenAPI's Schema Object *is* a JSON-Schema dialect:
+
+<p align="center">
+  <a href="assets/infographics/json-schema-document-model.avif">
+    <img src="assets/infographics/json-schema-document-model.avif" alt="How schemakit maps JSON Schema and OpenAPI to and from A12 DocumentModels with explicit fidelity" width="720">
+  </a>
+</p>
+<p align="center"><sub>Click the infographic to open the full-resolution image.</sub></p>
 
 ```sh
 # OpenAPI → model: --dialect AUTO-detects 3.0/3.1/3.2; --component picks the components/schemas entry
@@ -257,18 +289,42 @@ End-to-end walkthroughs of **every verb** — command + real captured output —
 
 Want ideas for what to *ask*? [`SCENARIOS.md`](SCENARIOS.md) catalogues realistic **multi-step sessions** — ordered, plain-language asks you can hand to your agent verbatim: from-scratch authoring, evolving an existing model's rules, refactors, computations, and more.
 
+## Runtime performance and memory
+
+The embedded Interpreter is the runtime engine behind dmtool's evaluation verbs. These measurements cover that in-process engine, not dmtool process startup or CLI parsing; the full method and boundaries are in the public Interpreter [performance report](https://github.com/mbackschat/a12-interpreter-releases/blob/main/PERFORMANCE.md).
+
+<p align="center">
+  <a href="assets/infographics/interpreter-vs-kernel.avif">
+    <img src="assets/infographics/interpreter-vs-kernel.avif" alt="Measured A12 Interpreter performance and resident memory compared with the A12 Kernel" width="720">
+  </a>
+</p>
+<p align="center"><sub>Click the infographic to open the full-resolution image.</sub></p>
+
 <!-- source-statistics:dmtool:start -->
 ## Source statistics
 
-Generated with [Tokei](https://github.com/XAMPPRocky/tokei) from the production sources linked into the dmtool artifact. Tests, fixtures, generated output, build trees, and code embedded in Markdown are excluded.
+Generated with [Tokei](https://github.com/XAMPPRocky/tokei) from the sources linked into the dmtool artifact. Fixtures, generated output and build trees are excluded from every count.
 
-| Language | Files | Code | Comments | Blanks |
-|---|---:|---:|---:|---:|
-| Java | 475 | 47474 | 13555 | 6957 |
-| Kotlin | 114 | 18703 | 7575 | 2367 |
-| TypeScript | 0 | 0 | 0 | 0 |
+### Production
 
-Maintainers regenerate this table with the local statistics updater; both release publishers compare it with fresh counts before any public mutation.
+The shipped product. Counted from `core/src/main/java`, `rulekit/src/main/java`, `modelkit/src/main/java`, `edit/src/main/java`, `schemakit/src/main/java`, `adapter/src/main/java`, `cli/src/main/java`, `interpreter/src/commonMain/kotlin`, `interpreter/src/jvmMain/kotlin`, `interpreter/src/jsMain/kotlin`, `consistency/src/commonMain/kotlin`, `consistency/src/jsMain/kotlin`, `predicates/src/commonMain/kotlin`, `interpreter-bridge/src/main/kotlin`, `consistency-gate/src/main/kotlin`, `cli/src/main/resources/io/github/mbackschat/a12/dm/cli/interp/custom-js-worker.mjs`.
+
+| Language | Files | Lines | Code | Comments | Blanks |
+|---|---:|---:|---:|---:|---:|
+| Java | 524 | 79499 | 53331 | 18212 | 7956 |
+| Kotlin | 342 | 69858 | 42055 | 22442 | 5361 |
+| JavaScript | 1 | 107 | 72 | 25 | 10 |
+
+### Verification
+
+Tests, laws, kernel differentials, fuzzers, conformance replay, and the external consumer programs compiled against the packed artifacts. Counted from `src/test/java`, `schemakit/src/test/java`, `adapter/src/test/java`, `cli/src/test/java`, `src/noBackendTest/java`, `src/releaseGuardTest/java`, `adapter/src/kernelClosureConsumer/java`, `adapter/src/testFixtures/java`, `interpreter/src/jvmTest/java`, `consistency-gate/src/test/java`, `interpreter/consumer-tests/kotlin-jvm/src/main/java`, `adapter/src/test/kotlin`, `interpreter/src/commonTest/kotlin`, `interpreter/src/jvmTest/kotlin`, `interpreter/src/jsTest/kotlin`, `consistency/src/commonTest/kotlin`, `predicates/src/commonTest/kotlin`, `interpreter-bridge/src/test/kotlin`, `consistency-gate/src/test/kotlin`, `interpreter/consumer-tests/kotlin-jvm/src/main/kotlin`, `interpreter/consumer-tests/kotlin-js/src/jsMain/kotlin`.
+
+| Language | Files | Lines | Code | Comments | Blanks |
+|---|---:|---:|---:|---:|---:|
+| Java | 1269 | 198066 | 137222 | 38441 | 22403 |
+| Kotlin | 1512 | 219892 | 164819 | 34985 | 20088 |
+
+Maintainers regenerate these tables with the local statistics updater; both release publishers compare them with fresh counts before any public mutation.
 <!-- source-statistics:dmtool:end -->
 
 ## Changelog

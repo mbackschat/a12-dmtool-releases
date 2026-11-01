@@ -145,6 +145,34 @@ And FieldNotFilled(vatId)
 
 → `total` is in error when it's filled **and** `≤ 0` (the negation of `exclusiveMinimum: 0`); the `if/then` fires when `tier = PREMIUM` **and** `vatId` is absent. Each is authored through the typed rulekit DSL and kernel-gated, so it's well-formed by construction.
 
+An optional array's `minItems` cannot become an unconditional A12 rule: absent and empty arrays share the A12 state. The import report exposes the omitted constraint:
+
+```bash
+echo '{"title":"Parcel","type":"object","properties":{
+  "legs":{"type":"array","maxItems":3,"minItems":1,
+    "items":{"type":"object","properties":{"label":{"type":"string"}}}}}}' > /tmp/parcel.schema.json
+dmtool model import-jsonschema --schema /tmp/parcel.schema.json -o /tmp/parcel.dm.json 2>/dev/null \
+  | jq -c '{outcome, omitted: .changed.report.omitted}'
+```
+
+```output
+{"outcome":"applied","omitted":1}
+```
+
+A string-property `contains` predicate may also need the original validator: a missing `label` satisfies a `properties` constraint, but a present empty `label` fails `const:"express"`. The importer reports that unsupported distinction even when the array is required:
+
+```bash
+jq '.required=["legs"] | del(.properties.legs.minItems)
+    | .properties.legs.contains={properties:{label:{const:"express"}}}' \
+  /tmp/parcel.schema.json > /tmp/parcel-contains.schema.json
+dmtool model import-jsonschema --schema /tmp/parcel-contains.schema.json -o /tmp/parcel-contains.dm.json \
+  2>/dev/null | jq -c '{outcome, omitted: .changed.report.omitted}'
+```
+
+```output
+{"outcome":"applied","omitted":1}
+```
+
 ## OpenAPI dialects & whole-document bundles
 
 Most schemas ship inside **OpenAPI**, where definitions live under `components/schemas` and a few keywords differ by version. The importer **auto-detects the dialect** and can import the **whole document** as many models — `--out-dir` writes one per component, wiring each object `$ref` as an a12 **mount** (single-sourced, not inlined):
@@ -222,24 +250,30 @@ But export is **best-effort**, and a real model exposes the limits. Exporting th
 
 ```bash
 dmtool -m examples/models/order-ruled.dm.json model export-jsonschema 2>/dev/null \
-  | jq -c '{type, fields: (.properties|length), carried_rules: (.["x-a12-rule"]|length)}'
+  | jq -c '{type, fields: (.properties|length), carried_rules: (.["x-a12-rule"]|length),
+           item_index: .properties.Items.items["x-a12-index-field-name"]}'
 ```
 
 ```output
-{"type":"object","fields":13,"carried_rules":3}
+{"type":"object","fields":13,"carried_rules":3,"item_index":"Sku"}
 ```
 
-The report on stderr names every lossy disposition — here, the three field kinds with no native JSON Schema form:
+The root object carries its unchanged `Order` name as `x-a12-root-group-name`. The item object also carries its unchanged `Sku` index-field reference as `x-a12-index-field-name`, so import can restore indexed rules. This annotation adds no native JSON Schema constraint.
+
+The report on stderr names every lossy disposition — here, three field-kind fallbacks and the rule pattern that remains carried:
 
 ```bash
 dmtool -m examples/models/order-ruled.dm.json model export-jsonschema 2>&1 1>/dev/null
 ```
 
 ```output
-transcoding report: 22 mapped, 0 omitted, 3 note(s)
+transcoding report: 23 mapped, 0 omitted, 4 note(s)
   - kind 'CONFIRM' at '/Order/TermsConfirmed' is not mapped yet — string placeholder
   - kind 'DATE' at '/Order/OrderDate' is not mapped yet — string placeholder
   - kind 'DATE' at '/Order/DeliveryDate' is not mapped yet — string placeholder
+  - rule '/Order/BillingAddress/PostalCodeFormat' has a pattern that remains carried — the
+    single native pattern does not preserve the whole predicate and present empty-string
+    applicability
 ```
 
 For an OpenAPI consumer, `--wrap-openapi` wraps the export as a `components/schemas` fragment ready to paste into an API document:

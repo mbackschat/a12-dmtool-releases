@@ -28,6 +28,8 @@ dmtool -m examples/models/order-ruled.dm.json model describe \
 
 Runs a model through the **real kernel** consistency check — the same engine that gates persistence. This verb returns the **result envelope**: `outcome`, `ok` (did the op run), `valid` (is the subject model valid), and `diagnostics[]`, with exit 0 valid / 1 invalid.
 
+Because this is the one verb that can be answered by **two** engines (`--engine kernel`, the default, or the kernel-free `--engine portable`), its envelope also carries a receipt — `engineRequested`, `engineExecuted`, `engineVersion` — read from the engine that answered rather than stated by dmtool. The two always match: the engine you ask for is the engine that answers, and no envelope is emitted at all where they would differ.
+
 ```bash
 dmtool -m examples/models/order-ruled.dm.json model check
 ```
@@ -40,6 +42,9 @@ dmtool -m examples/models/order-ruled.dm.json model check
   "ok" : true,
   "valid" : true,
   "verification" : "KERNEL_CONFIRMED",
+  "engineRequested" : "A12_KERNEL",
+  "engineExecuted" : "A12_KERNEL",
+  "engineVersion" : "30.8.1",
   "summary" : "model is valid",
   "diagnostics" : [ ],
   "written" : false
@@ -47,6 +52,24 @@ dmtool -m examples/models/order-ruled.dm.json model check
 ```
 
 → `valid: true` with an empty `diagnostics` array means the kernel accepts the model as-is. Note the **ok/valid split**: `ok` says the validate op ran; `valid` is its verdict about the model. A failing model would list diagnostics (each with `code`, `severity`, message) and exit `1`.
+
+Malformed input has no consistency verdict. It is refused with exit 2 and a corrective `PRECHECK` diagnostic, without `valid` or `verification`.
+
+```bash
+broken_model=$(mktemp)
+printf '{"header":' > "$broken_model"
+dmtool -m "$broken_model" model check > "$broken_model.result"
+input_exit=$?
+jq -c '{outcome, code: .diagnostics[0].code, source: .diagnostics[0].source,
+        hasVerdict: (has("valid") or has("verification"))}' "$broken_model.result"
+printf 'exit=%s\n' "$input_exit"
+rm "$broken_model" "$broken_model.result"
+```
+
+```output
+{"outcome":"refused","code":"RK_MODEL_INPUT_INVALID","source":"PRECHECK","hasVerdict":false}
+exit=2
+```
 
 ## rule read
 
@@ -137,7 +160,7 @@ dmtool -m examples/models/order-ruled.dm.json rule explain /Order/DeliveryNotBef
       "kind": "PREDICATE",
       "meaning": "In validation, true iff every declared slot is known filled; a known empty, unavailable, or declared-but-uninstantiated slot prevents firing.",
       "gotchas": [
-        "validation is an extensional tally: an unavailable slot stays in the range but counts as neither filled nor empty. In a computation, group cells scan recursively in declaration order (field-major, then repetition-major); the first empty slot decides, a reached invalid slot poisons, and a suffix after the decision is unread"
+        "in validation, an unavailable slot stays in the range but counts as neither filled nor empty. In a computation, group cells scan recursively in declaration order (field-major, then repetition-major); the first empty slot decides, a reached invalid slot poisons, and a suffix after the decision is unread. For a Having-filtered list in full validation or computation, the all-filled pass scans selected declared coordinates densely and stops at the first non-filled or unavailable payload. Each pass reads one kept successor ahead; a reached filter failure matters, while later suffixes remain unread"
       ]
     },
     {
@@ -218,6 +241,9 @@ dmtool -m examples/models/order-ruled.dm.json rule check --field /Order/Quantity
   "ok" : true,
   "valid" : true,
   "verification" : "KERNEL_CONFIRMED",
+  "engineRequested" : "A12_KERNEL",
+  "engineExecuted" : "A12_KERNEL",
+  "engineVersion" : "30.8.1",
   "summary" : "candidate is kernel-valid",
   "diagnostics" : [ {
     "severity" : "WARNING",

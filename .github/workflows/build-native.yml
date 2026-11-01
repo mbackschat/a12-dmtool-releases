@@ -41,7 +41,7 @@ jobs:
   # 1. Rebuild the kernel from public sources ONCE (Linux only — the bootstrap is bash) and publish the
   #    resulting mavenLocal JARs as an artifact the per-OS native jobs consume.
   bootstrap-kernel:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
       - name: Checkout the kernel bootstrap kit (public)
@@ -59,8 +59,8 @@ jobs:
         with:
           distribution: temurin
           java-version: |
-            21
-            25
+            21.0.12
+            25.0.4
 
       - name: Cache bootstrapped kernel (mavenLocal)
         id: kernel-cache
@@ -93,7 +93,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-latest
+          - os: ubuntu-24.04
             target: linux-x64
             binary: dmtool
             asset: dmtool-linux-x64
@@ -125,21 +125,28 @@ jobs:
           name: kernel-m2
           path: ~/.m2/repository/com/mgmtp
 
-      # The Gradle toolchain is JDK 21 (compileJava); native-image needs GraalVM 25 (toolchainDetection=false
-      # → resolved via GRAALVM_HOME). Provide BOTH: setup-java 21 first (exports the arch-specific JAVA_HOME_21_*),
-      # then setup-graalvm 25 (becomes JAVA_HOME + GRAALVM_HOME). Gradle finds the 21 toolchain via fromEnv below.
+      # The Gradle toolchain is JDK 21 (compileJava); native-image needs the pinned GraalVM 25.3 builder
+      # (toolchainDetection=false → resolved via GRAALVM_HOME). Provide BOTH: setup-java 21 first
+      # (exports the arch-specific JAVA_HOME_21_*), then setup-graalvm 25.3 (becomes JAVA_HOME + GRAALVM_HOME).
+      # The exact-builder verifier rejects train
+      # drift before compilation. Gradle finds the 21 toolchain via fromEnv below.
       - name: Set up JDK 21 (Gradle toolchain)
         uses: actions/setup-java@v5
         with:
           distribution: temurin
-          java-version: 21
+          java-version: 21.0.12
 
-      - name: Set up GraalVM 25 (native-image)
+      - name: Set up GraalVM 25.3 Innovation (native-image)
         uses: graalvm/setup-graalvm@v1
         with:
-          java-version: '25'
+          version: '25.3'
           distribution: 'graalvm'
           github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify the exact GraalVM native builder
+        working-directory: a12-dmkits
+        shell: bash
+        run: ./scripts/verify-graalvm-native.sh
 
       - name: Build the native binary
         working-directory: a12-dmkits
@@ -157,6 +164,14 @@ jobs:
         uses: astral-sh/setup-uv@v6
         with:
           enable-cache: false
+
+      # cli-custom-types.md invokes the bundled custom-JS worker through system Node. Pin it explicitly so the
+      # native gate cannot inherit a different worker runtime from a hosted-image refresh.
+      - name: Set up Node.js for the native custom-JS demo
+        if: startsWith(matrix.target, 'linux-')
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24.20.0'
 
       - name: Native verification gate (Linux)
         if: startsWith(matrix.target, 'linux-')
@@ -210,7 +225,7 @@ jobs:
   publish:
     needs: build-native
     if: inputs.release_tag != ''
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       TAG: ${{ inputs.release_tag }}

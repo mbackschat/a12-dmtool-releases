@@ -186,7 +186,7 @@ dmtool -m examples/models/multifile/app/storefront.dm.json \
 
 ## batch — many ops in one warm JVM
 
-`batch` runs a JSON array of independent verb invocations in a single process. Each op is `{id, verb, args}`, where `verb` is the **target** (`field`) and the operation (`add`) leads `args` — the same target-first form a standalone call uses. Batch attempts every child and never rolls back earlier writes; use `apply` when edits must be atomic. This black-box example deliberately writes once and then rejects the duplicate:
+`batch` runs a JSON array of independent verb invocations in a single process. Each op is `{id, verb, args}`, and `verb` takes either spelling: the **target** alone (`field`) with the operation leading `args`, as below, or the manifest's own two-word name (`"field add"`) with only the arguments in `args`. Both reach the same verb. Batch attempts every child and never rolls back earlier writes; use `apply` when edits must be atomic. This black-box example deliberately writes once and then rejects the duplicate:
 
 ```bash
 cp examples/models/subscription.dm.json /tmp/batch-contract.dm.json
@@ -224,6 +224,25 @@ dmtool -m /tmp/batch-contract.dm.json field read /Subscription/Billing/BatchComm
 ```
 
 → This is non-transactional partial persistence by design. Each result keeps its `id`, exact exit, and `written` state. Use `batch` for independent calls or explicitly acceptable partial writes; use `apply` for all-or-nothing model edits.
+
+A batch written straight from `manifest` spells its verbs the way `manifest` prints them, and a verb naming no command is refused once — before any child runs, which is the only moment at which nothing has been written:
+
+```bash
+cat > /tmp/spelling-ops.json <<'EOF'
+[
+  {"id":"manifest-spelling","verb":"model check","args":[]},
+  {"id":"typo","verb":"modle","args":[]}
+]
+EOF
+dmtool -m /tmp/batch-contract.dm.json batch /tmp/spelling-ops.json \
+  | jq -c '{outcome, written, code: .diagnostics[0].code, at: .diagnostics[0].where.path}'
+```
+
+```output
+{"outcome":"refused","written":false,"code":"RK_UNKNOWN_ARG","at":"/1"}
+```
+
+→ Drop the second op and the first dispatches normally; `manifest-spelling` is the same call as `{"verb":"model","args":["check"]}`.
 
 ## The tool describes itself — operators & schema
 
@@ -417,6 +436,7 @@ dmtool -m /tmp/edit2-sub.json computation read /Subscription/Billing/EffectiveFe
   "summary" : "read /Subscription/Billing/EffectiveFeeComp",
   "data" : {
     "computation" : "/Subscription/Billing/EffectiveFeeComp",
+    "group" : "/Subscription/Billing",
     "errorCodesToSuppress" : [ ],
     "converted" : true,
     "calculatedField" : "/Subscription/Billing/EffectiveFee",
@@ -437,6 +457,8 @@ dmtool -m /tmp/edit2-sub.json computation read /Subscription/Billing/EffectiveFe
 ```
 
 → `outcome: "read"`, `ok: true`, and `.data` carries `converted: true` (the kernel construct round-tripped into rulekit's typed form cleanly), `calculatedField` — the `/Subscription/Billing/EffectiveFee` this computation assigns — and the exact A12 `errorCodesToSuppress` list (empty here). `read` writes nothing (`written: false`); it's the verification half of the add we just made.
+
+→ `group` and `calculatedField` are reported as a **pair** because A12 lets them differ: `group` is where the computation *lives*, `calculatedField` is where it *writes*. `group` defaults to the computed field's parent, so the two coincide unless the spec's optional `group` names another one — declaring the computation in a different subtree, say a policy container that owns a computation writing into the billing block. Reading the pair back is what confirms such a placement survived authoring.
 
 ## computation remove — drop a computation
 
