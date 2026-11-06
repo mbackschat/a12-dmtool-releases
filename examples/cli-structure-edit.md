@@ -132,7 +132,8 @@ dmtool -m /tmp/struct.dm.json field remove /Order/DeliveryDate >/tmp/struct-refu
   "data" : {
     "referencedBy" : {
       "rules" : [ "/Order/DeliveryNotBeforeOrder" ],
-      "computations" : [ ]
+      "computations" : [ ],
+      "documentUniquenessCriteria" : [ ]
     }
   },
   "diagnostics" : [ {
@@ -521,7 +522,7 @@ dmtool -m /tmp/struct2-td.json typedef remove Currency >/tmp/struct2-td-rej.json
   "diagnostics" : [ {
     "severity" : "ERROR",
     "source" : "KERNEL",
-    "summary" : "the kernel could not build this model: Typedefinition with id 'Currency' could not be found.",
+    "summary" : "Field with path '/Subscription/Billing/SetupFee': Typedefinition with id 'Currency' could not be found.",
     "where" : { }
   } ],
   "written" : false
@@ -849,10 +850,10 @@ dmtool -m /tmp/struct2-ext/order.dm.json \
 }
 ```
 
-→ the subtree (and its own rule) moved into `billing-address.dm.json`; the base now **mounts** it at the same path. Two files, the base slimmed to a `modelAlias`:
+→ the subtree (and its own rule) moved into `billing-address.dm.json`; the base now **mounts** it at the same path. Two files, the base slimmed to a mount whose `includeConfig` names the sub-model:
 
 ```bash
-ls /tmp/struct2-ext && jq -c '[.. | objects | select(has("modelAlias")) | .modelAlias]' /tmp/struct2-ext/order.dm.json
+ls /tmp/struct2-ext && jq -c '[.. | objects | select(has("includeConfig")) | .includeConfig.reference]' /tmp/struct2-ext/order.dm.json
 ```
 
 ```output
@@ -883,14 +884,13 @@ dmtool -m /tmp/struct2-ext/order.dm.json include inline billing-address \
   "outcome": "applied",
   "ok": true,
   "changed": {
-    "inlined": "billing-address",
-    "reference": "billing-address"
+    "inlined": "billing-address"
   }
 }
 ```
 
 ```bash
-jq -c '[.. | objects | select(has("modelAlias")) | .modelAlias]' /tmp/struct2-ext/order.dm.json \
+jq -c '[.. | objects | select(has("includeConfig")) | .includeConfig.reference]' /tmp/struct2-ext/order.dm.json \
   && dmtool -m /tmp/struct2-ext/order.dm.json model check | jq -c '{valid}'
 ```
 
@@ -903,7 +903,7 @@ jq -c '[.. | objects | select(has("modelAlias")) | .modelAlias]' /tmp/struct2-ex
 
 ## include — mount another model's content
 
-An include declares a reference to another model (`--alias` → `--reference`) and mounts its content as a group (`--name`) under `--parent`. The referenced model is resolved by its header id from `-w/--workspace`. We stage a `/tmp` copy of `subscription` plus a tiny library directory holding the committed `catalog` model:
+An include mounts another model's content as a group (`--name`) under `--parent`; the mount names that model by its id (`--reference`), which is the include's only identity. The referenced model is resolved by its header id from `-w/--workspace`. We stage a `/tmp` copy of `subscription` plus a tiny library directory holding the committed `catalog` model:
 
 ```bash
 cp examples/models/subscription.dm.json /tmp/struct2-sub.json
@@ -939,7 +939,7 @@ Now `include add` resolves `catalog` from `-w/--workspace` and mounts it under `
 ```bash
 dmtool -m /tmp/struct2-sub.json \
   include add \
-  --alias catalog --reference catalog \
+  --reference catalog \
   --parent /Subscription --name Catalog \
   -w /tmp/struct2-lib
 ```
@@ -954,7 +954,6 @@ dmtool -m /tmp/struct2-sub.json \
   "summary" : "added include catalog",
   "changed" : {
     "added" : "catalog",
-    "reference" : "catalog",
     "mountedAt" : "/Subscription/Catalog"
   },
   "diagnostics" : [ ],
@@ -980,7 +979,6 @@ dmtool -m /tmp/struct2-sub.json include read
   "summary" : "read 1 include(s)",
   "data" : {
     "includes" : [ {
-      "alias" : "catalog",
       "reference" : "catalog"
     } ]
   },
@@ -989,7 +987,7 @@ dmtool -m /tmp/struct2-sub.json include read
 }
 ```
 
-→ `data.includes` carries the `alias → reference` pair the header declares. `include remove <alias>` then drops the header reference *and* its mounts:
+→ `data.includes` names each included model. `include remove <reference>` then drops the header reference *and* its mounts:
 
 ```bash
 dmtool -m /tmp/struct2-sub.json include remove catalog -w /tmp/struct2-lib
@@ -1013,6 +1011,52 @@ dmtool -m /tmp/struct2-sub.json include remove catalog -w /tmp/struct2-lib
 ```
 
 → `changed.removed = catalog`: the reference and the `/Subscription/Catalog` mount are both gone. (A rule still using the include would block the removal, the same reference-gate pattern as the field/group removes.)
+
+## criterion — document uniqueness criteria
+
+A **document uniqueness criterion** names fields whose values no two stored documents may share — a customer number, say. It is model data: no rule or validation run evaluates it. `criterion add` takes one entry in exactly the shape A12 stores it, so what `criterion read` returns can be added elsewhere as is. A12 admits a criterion only over **required** fields, so the field comes first:
+
+```bash
+dmtool model new --id customer-register --locale en_US --root Customer -o /tmp/struct2-crit.json | jq -c '{outcome}'
+echo '{"group":"/Customer","name":"Number","kind":"STRING","required":true}' > /tmp/struct2-number.json
+dmtool -m /tmp/struct2-crit.json field add /tmp/struct2-number.json | jq -c '{outcome, added: .changed.added}'
+echo '{"name":"UniqueCustomerNumber","fields":[{"fullName":"/Customer/Number"}],
+       "errorMessage":[{"locale":"en_US","text":"Customer number $/Customer/Number.value$ is already taken."}]}' > /tmp/struct2-key.json
+dmtool -m /tmp/struct2-crit.json criterion add /tmp/struct2-key.json | jq -c '{outcome, added: .changed.added}'
+```
+
+```output
+{"outcome":"applied"}
+{"outcome":"applied","added":"/Customer/Number"}
+{"outcome":"applied","added":"UniqueCustomerNumber"}
+```
+
+`criterion read <name>` returns the stored entry (no argument returns the whole `documentUniquenessCriteria` member):
+
+```bash
+dmtool -m /tmp/struct2-crit.json criterion read UniqueCustomerNumber | jq -c .data
+```
+
+```output
+{"name":"UniqueCustomerNumber","fields":[{"fullName":"/Customer/Number"}],"errorMessage":[{"locale":"en_US","text":"Customer number $/Customer/Number.value$ is already taken."}]}
+```
+
+A field a criterion names is in use, so `field remove` refuses it — `--cascade` too, since that removes only rules and computations — and the fix names the verb that frees it:
+
+```bash
+dmtool -m /tmp/struct2-crit.json field remove /Customer/Number | jq -r '.diagnostics[0].code, .diagnostics[0].fix'
+dmtool -m /tmp/struct2-crit.json criterion remove UniqueCustomerNumber | jq -c '{outcome, removed: .changed.removed}'
+dmtool -m /tmp/struct2-crit.json field remove /Customer/Number | jq -c '{outcome, removed: .changed.removed}'
+```
+
+```output
+RK_REFERENCED
+first `criterion remove` the document uniqueness criterion UniqueCustomerNumber, which names a field at or below /Customer/Number (re-declare it over other fields with `criterion add`); --cascade removes only rules and computations, never a criterion
+{"outcome":"applied","removed":"UniqueCustomerNumber"}
+{"outcome":"applied","removed":"/Customer/Number"}
+```
+
+→ A taken name is refused (`RK_NAME_EXISTS`) and an unknown one too (`RK_NO_SUCH_UNIQUENESS_CRITERION`); whether A12 admits a criterion's fields and texts is the kernel gate's call, reported in its own sentence.
 
 ## config — read and modify the document settings
 
@@ -1146,7 +1190,7 @@ dmtool -m /tmp/struct2-exp.json export
 ```
 
 ```output
-# Model: subscription (v28.4.0)
+# Model: subscription (v29.4.0)
 
 - fields: 8
 - groups: 3 (1 repeatable)

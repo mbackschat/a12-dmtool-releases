@@ -6,7 +6,7 @@ This repository is the **public distribution** — release-only (binaries + the 
 
 > **Not an official A12 / mgm artifact.** `dmtool` is an independent tool built against the public A12 Kernel.
 
-This release targets **A12 Kernel 30.8.1** (A12 Tools distribution **2025.06-ext5**) — reported by `dmtool --version` and `dmtool manifest`, and recorded per entry in the [`CHANGELOG`](CHANGELOG.md).
+This release targets **A12 Kernel 31.1.1** (A12 Tools distribution **2026.06-ext1**) — reported by `dmtool --version` and `dmtool manifest`, and recorded per entry in the [`CHANGELOG`](CHANGELOG.md).
 
 ## Documentation
 
@@ -311,11 +311,11 @@ Product implementation.
 
 | Language | Files | Lines | Code | Comments | Blanks |
 |---|---:|---:|---:|---:|---:|
-| Java | 524 | 79499 | 53318 | 18212 | 7969 |
+| Java | 550 | 81630 | 54672 | 18714 | 8244 |
 | JavaScript | 1 | 107 | 72 | 25 | 10 |
-| Kotlin | 343 | 69790 | 41801 | 22546 | 5443 |
-| TypeScript | 11 | 1813 | 1403 | 240 | 170 |
-| **Total** | **879** | **151209** | **96594** | **41023** | **13592** |
+| Kotlin | 350 | 70673 | 42307 | 22844 | 5522 |
+| TypeScript | 11 | 1808 | 1398 | 240 | 170 |
+| **Total** | **912** | **154218** | **98449** | **41823** | **13946** |
 
 ### Verification
 
@@ -324,11 +324,11 @@ Automated tests, laws, differentials, consumer checks, and their support code.
 | Language | Files | Lines | Code | Comments | Blanks |
 |---|---:|---:|---:|---:|---:|
 | HTML | 4 | 101 | 56 | 45 | 0 |
-| Java | 1270 | 198131 | 137208 | 38472 | 22451 |
-| JavaScript | 12 | 1032 | 666 | 262 | 104 |
-| Kotlin | 1530 | 220921 | 164674 | 35747 | 20500 |
-| TypeScript | 29 | 5260 | 4424 | 543 | 293 |
-| **Total** | **2845** | **425445** | **307028** | **75069** | **43348** |
+| Java | 1313 | 201763 | 139928 | 38845 | 22990 |
+| JavaScript | 12 | 1036 | 666 | 266 | 104 |
+| Kotlin | 1567 | 224968 | 167664 | 36426 | 20878 |
+| TypeScript | 30 | 5273 | 4433 | 545 | 295 |
+| **Total** | **2926** | **433141** | **312747** | **76127** | **44267** |
 
 Maintainers regenerate these tables with the latest locmetry; release publishers compare them with fresh counts before any public mutation.
 <!-- source-statistics:dmtool:end -->
